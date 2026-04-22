@@ -1,22 +1,22 @@
-import { inferLanguage } from "./utils.js";
-import { getReviewSymbolContext } from "./review-symbols.js";
+import { inferLanguage } from "../../shared/lib/utils.js";
+import { getReviewSymbolContext } from "../symbols/symbol-context.js";
 import type {
   DiffReviewComment,
   ReviewFile,
   ReviewScope,
   ReviewFileContents,
-} from "./types.js";
+} from "../../shared/contracts/review.js";
 import type {
   ReviewNavigationTarget,
   ReviewNavigationRequest,
   ReviewNavigationSide,
   ReviewNavigationResolver,
-} from "./review-navigation.js";
+} from "../navigation/resolver.js";
 import type {
   ReviewMountOptions,
   ReviewState,
   ReviewFileScrollState,
-} from "./review-state.js";
+} from "../../shared/state/review-state.js";
 
 interface MonacRequire {
   (dependencies: string[], callback: () => void): void;

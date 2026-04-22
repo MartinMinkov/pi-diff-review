@@ -1,5 +1,5 @@
 (() => {
-  // web/src/utils.ts
+  // src/web/shared/lib/utils.ts
   function escapeHtml(value) {
     return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;");
   }
@@ -165,7 +165,7 @@
     return root;
   }
 
-  // web/src/review-sidebar.ts
+  // src/web/features/file-tree/sidebar.ts
   function createSidebarController(options) {
     const {
       reviewDataFiles,
@@ -360,7 +360,7 @@
     };
   }
 
-  // web/src/review-state.ts
+  // src/web/shared/state/review-state.ts
   function createInitialReviewState(reviewData) {
     return {
       activeFileId: null,
@@ -380,7 +380,7 @@
     };
   }
 
-  // web/src/review-elements.ts
+  // src/web/app/dom.ts
   function getReviewDomElements() {
     return {
       sidebarEl: document.getElementById("sidebar"),
@@ -413,7 +413,7 @@
     };
   }
 
-  // web/src/ui-modals.ts
+  // src/web/features/comments/modals.ts
   function insertAtCursor(textarea, value) {
     const before = textarea.value.slice(0, textarea.selectionStart ?? textarea.value.length);
     const after = textarea.value.slice(textarea.selectionEnd ?? textarea.value.length);
@@ -613,7 +613,7 @@
     return container;
   }
 
-  // web/src/review-comments.ts
+  // src/web/features/comments/comment-manager.ts
   function createCommentManager(options) {
     const { state, activeFile, scopeLabel: scopeLabel2, fileCommentsContainer } = options;
     function renderCommentDOM2(comment, onDelete) {
@@ -658,7 +658,7 @@
     };
   }
 
-  // web/src/review-symbols.ts
+  // src/web/features/symbols/symbol-context.ts
   function getReviewSymbolContext(content, lineNumber, languageId) {
     const lines = content.split(/\r?\n/);
     const maxIndex = Math.min(Math.max(lineNumber - 1, 0), lines.length - 1);
@@ -709,7 +709,7 @@
     return match?.[1] || null;
   }
 
-  // web/src/review-editor.ts
+  // src/web/features/editor/review-editor.ts
   function scrollKey(scope, fileId) {
     return `${scope}:${fileId}`;
   }
@@ -1286,7 +1286,7 @@ Target: \`${describeNavigationTarget(target)}\`
     };
   }
 
-  // web/src/review-navigation.ts
+  // src/web/features/navigation/resolver.ts
   var REVIEW_MODEL_SCHEME = "review-model";
   var REVIEW_TARGET_SCHEME = "review-target";
   var TS_LIKE_EXTENSIONS = [
@@ -1878,7 +1878,7 @@ Target: \`${describeNavigationTarget(target)}\`
     return value === "original" || value === "modified";
   }
 
-  // web/src/review-runtime.ts
+  // src/web/app/runtime.ts
   function createReviewRuntimeController(options) {
     const {
       dom: {
@@ -1964,7 +1964,7 @@ Target: \`${describeNavigationTarget(target)}\`
     };
   }
 
-  // web/src/app.ts
+  // src/web/app/main.ts
   var reviewData = JSON.parse(document.getElementById("diff-review-data")?.textContent ?? "{}");
   var state = createInitialReviewState(reviewData);
   var navigationResolver = createReviewNavigationResolver(reviewData);

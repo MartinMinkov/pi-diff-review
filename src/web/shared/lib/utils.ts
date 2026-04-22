@@ -1,4 +1,4 @@
-import type { ReviewScope, ReviewFile } from "./types.js";
+import type { ReviewScope, ReviewFile } from "../contracts/review.js";
 
 export interface TreeNode {
   name: string;

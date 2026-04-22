@@ -6,7 +6,7 @@
   "scripts": {
     "check": "tsc -p tsconfig.json",
     "check:web": "tsc -p tsconfig.web.json",
-    "build:web": "bun build web/src/app.ts --bundle --target=browser --format=iife --outfile=web/app.js",
+    "build:web": "node scripts/build-web.mjs",
     "postinstall": "node scripts/ensure-glimpse-host.mjs",
     "prepare": "husky"
   },

@@ -1,6 +1,10 @@
-import type { DiffReviewComment, ReviewScope, ReviewFile } from "./types.js";
-import { renderCommentDOM as renderCommentNode } from "./ui-modals.js";
-import type { ReviewState } from "./review-state.js";
+import type {
+  DiffReviewComment,
+  ReviewScope,
+  ReviewFile,
+} from "../../shared/contracts/review.js";
+import { renderCommentDOM as renderCommentNode } from "./modals.js";
+import type { ReviewState } from "../../shared/state/review-state.js";
 
 interface ReviewCommentsOptions {
   state: ReviewState;

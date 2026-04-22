@@ -6,9 +6,9 @@ import {
   statusLabel,
   getFileSearchPath,
   getFileSearchScore,
-} from "./utils.js";
-import { createSidebarController } from "./review-sidebar.js";
-import type { ReviewSidebarController } from "./review-sidebar.js";
+} from "../shared/lib/utils.js";
+import { createSidebarController } from "../features/file-tree/sidebar.js";
+import type { ReviewSidebarController } from "../features/file-tree/sidebar.js";
 import {
   type ReviewFile,
   type ChangeStatus,
@@ -19,34 +19,31 @@ import {
   type ReviewScope,
   type ReviewWindowData,
   type ReviewWindowMessage,
-} from "./types.js";
+} from "../shared/contracts/review.js";
 import {
   createInitialReviewState,
   type ReviewMountOptions,
   type ReviewState,
-} from "./review-state.js";
-import { getReviewDomElements } from "./review-elements.js";
+} from "../shared/state/review-state.js";
+import { getReviewDomElements } from "./dom.js";
 import {
   showPeekModal,
   showReferenceModal,
   showTextModal as openTextModal,
-} from "./ui-modals.js";
-import { createCommentManager } from "./review-comments.js";
-import type { ReviewCommentManager } from "./review-comments.js";
+} from "../features/comments/modals.js";
+import { createCommentManager } from "../features/comments/comment-manager.js";
+import type { ReviewCommentManager } from "../features/comments/comment-manager.js";
 import {
   createReviewEditor,
   type ReviewEditorController,
-} from "./review-editor.js";
+} from "../features/editor/review-editor.js";
 import {
   createReviewNavigationResolver,
   type ReviewNavigationSide,
   type ReviewNavigationTarget,
-} from "./review-navigation.js";
-import {
-  buildPreviewSnippet,
-  getReviewSymbolContext,
-} from "./review-symbols.js";
-import { createReviewRuntimeController } from "./review-runtime.js";
+} from "../features/navigation/resolver.js";
+import { buildPreviewSnippet } from "../features/symbols/symbol-context.js";
+import { createReviewRuntimeController } from "./runtime.js";
 
 declare global {
   interface Window {

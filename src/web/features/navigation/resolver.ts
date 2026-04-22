@@ -3,7 +3,7 @@ import type {
   ReviewGoModule,
   ReviewScope,
   ReviewWindowData,
-} from "./types.js";
+} from "../../shared/contracts/review.js";
 
 export type ReviewNavigationSide = "original" | "modified";
 

@@ -1,9 +1,14 @@
-import type { ReviewFile, ReviewFileContents, ReviewScope } from "./types.js";
+import type {
+  DiffReviewComment,
+  ReviewFile,
+  ReviewFileContents,
+  ReviewScope,
+} from "../contracts/review.js";
 
 export interface ReviewState {
   activeFileId: string | null;
   currentScope: ReviewScope;
-  comments: Array<import("./types.js").DiffReviewComment>;
+  comments: DiffReviewComment[];
   overallComment: string;
   hideUnchanged: boolean;
   wrapLines: boolean;

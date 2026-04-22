@@ -7,7 +7,7 @@ It is my hope, that someone takes this idea and makes it gud.
 Native diff review window for pi, powered by [Glimpse](https://github.com/hazat/glimpse) and Monaco.
 
 ```
-pi install git:https://github.com/badlogic/pi-diff-review
+pi install git:https://github.com/MartinMinkov/pi-diff-review
 ```
 
 ## What it does
@@ -29,6 +29,7 @@ The command:
 - macOS, Linux, or Windows
 - Node.js 20+
 - `pnpm` (this repo now uses `pnpm` for dependency management)
+- `bun` (only needed if you want to rebuild `dist/web/` locally)
 - `pi` installed
 - internet access for the Tailwind and Monaco CDNs used by the review window
 
@@ -36,10 +37,17 @@ To work with this repo:
 
 ```bash
 pnpm install
-pnpm run check      # typecheck core extension code
-pnpm run check:web  # typecheck web UI code
-pnpm run build:web # rebuild web/app.js
+pnpm run check      # typecheck host/extension code
+pnpm run check:web  # typecheck web UI source under src/web/
+pnpm run build:web  # rebuild dist/web/
 ```
+
+## Project layout
+
+- `src/host/` — extension command, repo loading, prompt composition, HTML assembly
+- `src/shared/` — shared review contracts used by host and web code
+- `src/web/` — review UI source, organized by app/shared/features
+- `dist/web/` — built review window assets consumed by the host
 
 ### Windows notes
 

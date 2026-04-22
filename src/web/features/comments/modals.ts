@@ -1,5 +1,5 @@
-import { escapeHtml } from "./utils.js";
-import type { DiffReviewComment } from "./types.js";
+import { escapeHtml } from "../../shared/lib/utils.js";
+import type { DiffReviewComment } from "../../shared/contracts/review.js";
 
 export interface TextModalOptions {
   title: string;

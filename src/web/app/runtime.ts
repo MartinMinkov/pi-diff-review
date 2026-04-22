@@ -2,7 +2,7 @@ import type {
   ReviewFileDataMessage,
   ReviewFileErrorMessage,
   ReviewHostMessage,
-} from "./types.js";
+} from "../shared/contracts/review.js";
 
 interface ReviewRuntimeDOM {
   submitButton: HTMLButtonElement;

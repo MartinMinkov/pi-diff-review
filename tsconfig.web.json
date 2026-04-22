@@ -1,9 +1,10 @@
 {
-  "extends": "./tsconfig.json",
+  "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "strict": false,
     "lib": ["ES2022", "DOM"],
-    "noEmit": true
+    "noEmit": true,
+    "types": []
   },
-  "include": ["web/src/**/*.ts"]
+  "include": ["src/web/**/*.ts", "src/shared/**/*.ts"]
 }

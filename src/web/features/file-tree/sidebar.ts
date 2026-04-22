@@ -3,11 +3,15 @@ import {
   getBaseName,
   getFileSearchPath,
   escapeHtml,
-} from "./utils.js";
-import type { ChangeStatus, ReviewFile, ReviewScope } from "./types.js";
-import type { TreeNode } from "./utils.js";
-import type { ReviewState } from "./review-state.js";
-import type { ReviewFileContents } from "./types.js";
+} from "../../shared/lib/utils.js";
+import type {
+  ChangeStatus,
+  ReviewFile,
+  ReviewScope,
+  ReviewFileContents,
+} from "../../shared/contracts/review.js";
+import type { TreeNode } from "../../shared/lib/utils.js";
+import type { ReviewState } from "../../shared/state/review-state.js";
 
 interface FileRequestState {
   contents?: ReviewFileContents;
