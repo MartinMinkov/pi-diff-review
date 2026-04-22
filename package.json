@@ -7,9 +7,15 @@
     "check": "tsc -p tsconfig.json",
     "check:web": "tsc -p tsconfig.web.json",
     "build:web": "bun build web/src/app.ts --bundle --target=browser --format=iife --outfile=web/app.js",
+    "postinstall": "node scripts/ensure-glimpse-host.mjs",
     "prepare": "husky"
   },
   "packageManager": "pnpm@10.18.2",
+  "pnpm": {
+    "patchedDependencies": {
+      "glimpseui@0.6.0": "patches/glimpseui@0.6.0.patch"
+    }
+  },
   "pi": {
     "extensions": [
       "./src/index.ts"

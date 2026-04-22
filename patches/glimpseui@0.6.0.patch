@@ -1,0 +1,46 @@
+diff --git a/src/glimpse.swift b/src/glimpse.swift
+index 825480d..9cff35c 100644
+--- a/src/glimpse.swift
++++ b/src/glimpse.swift
+@@ -238,6 +238,41 @@ window.glimpse = {
+ class GlimpsePanel: NSWindow {
+     override var canBecomeKey: Bool { true }
+     override var canBecomeMain: Bool { true }
++
++    override func performKeyEquivalent(with event: NSEvent) -> Bool {
++        guard event.type == .keyDown else {
++            return super.performKeyEquivalent(with: event)
++        }
++
++        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
++        guard modifiers.contains(.command) else {
++            return super.performKeyEquivalent(with: event)
++        }
++
++        let selector: Selector?
++        switch event.charactersIgnoringModifiers?.lowercased() {
++        case "x":
++            selector = #selector(NSText.cut(_:))
++        case "c":
++            selector = #selector(NSText.copy(_:))
++        case "v":
++            selector = #selector(NSText.paste(_:))
++        case "a":
++            selector = #selector(NSText.selectAll(_:))
++        default:
++            selector = nil
++        }
++
++        guard let selector else {
++            return super.performKeyEquivalent(with: event)
++        }
++
++        if NSApp.sendAction(selector, to: nil, from: self) {
++            return true
++        }
++
++        return super.performKeyEquivalent(with: event)
++    }
+ }
+ 
+ // MARK: - Status Item View Controller
