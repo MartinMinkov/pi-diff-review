@@ -409,6 +409,38 @@
   }
 
   // web/src/ui-modals.ts
+  function insertAtCursor(textarea, value) {
+    const before = textarea.value.slice(0, textarea.selectionStart ?? textarea.value.length);
+    const after = textarea.value.slice(textarea.selectionEnd ?? textarea.value.length);
+    const nextValue = `${before}${value}${after}`;
+    textarea.value = nextValue;
+    const cursor = (textarea.selectionStart ?? textarea.value.length) + value.length;
+    textarea.setSelectionRange(cursor, cursor);
+  }
+  function setupPasteHandler(textarea) {
+    textarea.addEventListener("paste", (event) => {
+      const pasteData = event.clipboardData;
+      const text = pasteData?.getData("text/plain");
+      if (text != null) {
+        event.preventDefault();
+        insertAtCursor(textarea, text);
+      }
+    });
+    textarea.addEventListener("keydown", async (event) => {
+      const isPasteShortcut = event.metaKey && event.key.toLowerCase() === "v" || event.ctrlKey && event.key.toLowerCase() === "v";
+      if (!isPasteShortcut)
+        return;
+      event.preventDefault();
+      if (!navigator.clipboard?.readText)
+        return;
+      try {
+        const text = await navigator.clipboard.readText();
+        if (text != null) {
+          insertAtCursor(textarea, text);
+        }
+      } catch {}
+    });
+  }
   function showTextModal(options) {
     const backdrop = document.createElement("div");
     backdrop.className = "review-modal-backdrop";
@@ -430,6 +462,9 @@
     const close = () => backdrop.remove();
     if (cancelButton) {
       cancelButton.addEventListener("click", close);
+    }
+    if (textarea) {
+      setupPasteHandler(textarea);
     }
     if (saveButton && textarea) {
       saveButton.addEventListener("click", () => {
@@ -463,6 +498,7 @@
       return container;
     }
     textarea.value = comment.body || "";
+    setupPasteHandler(textarea);
     textarea.addEventListener("input", () => {
       comment.body = textarea.value;
     });

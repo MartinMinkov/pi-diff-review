@@ -9,6 +9,54 @@ export interface TextModalOptions {
   onSave: (value: string) => void;
 }
 
+function insertAtCursor(textarea: HTMLTextAreaElement, value: string): void {
+  const before = textarea.value.slice(
+    0,
+    textarea.selectionStart ?? textarea.value.length,
+  );
+  const after = textarea.value.slice(
+    textarea.selectionEnd ?? textarea.value.length,
+  );
+  const nextValue = `${before}${value}${after}`;
+  textarea.value = nextValue;
+
+  const cursor =
+    (textarea.selectionStart ?? textarea.value.length) + value.length;
+  textarea.setSelectionRange(cursor, cursor);
+}
+
+function setupPasteHandler(textarea: HTMLTextAreaElement): void {
+  textarea.addEventListener("paste", (event) => {
+    const pasteData = event.clipboardData;
+    const text = pasteData?.getData("text/plain");
+    if (text != null) {
+      event.preventDefault();
+      insertAtCursor(textarea, text);
+    }
+  });
+
+  textarea.addEventListener("keydown", async (event) => {
+    const isPasteShortcut =
+      (event.metaKey && event.key.toLowerCase() === "v") ||
+      (event.ctrlKey && event.key.toLowerCase() === "v");
+
+    if (!isPasteShortcut) return;
+
+    event.preventDefault();
+
+    if (!navigator.clipboard?.readText) return;
+
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text != null) {
+        insertAtCursor(textarea, text);
+      }
+    } catch {
+      // Clipboard access may not be available in all environments; fallback to no-op.
+    }
+  });
+}
+
 export function showTextModal(options: TextModalOptions): void {
   const backdrop = document.createElement("div");
   backdrop.className = "review-modal-backdrop";
@@ -39,6 +87,10 @@ export function showTextModal(options: TextModalOptions): void {
 
   if (cancelButton) {
     cancelButton.addEventListener("click", close);
+  }
+
+  if (textarea) {
+    setupPasteHandler(textarea);
   }
 
   if (saveButton && textarea) {
@@ -92,6 +144,8 @@ export function renderCommentDOM(
   }
 
   textarea.value = comment.body || "";
+  setupPasteHandler(textarea);
+
   textarea.addEventListener("input", () => {
     comment.body = textarea.value;
   });
