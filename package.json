@@ -4,15 +4,19 @@
   "version": "0.2.0",
   "type": "module",
   "scripts": {
-    "check": "tsgo --noEmit",
+    "check": "tsc -p tsconfig.json",
+    "check:web": "tsc -p tsconfig.web.json",
+    "build:web": "bun build web/src/app.ts --bundle --target=browser --format=iife --outfile=web/app.js",
     "prepare": "husky"
   },
+  "packageManager": "pnpm@10.18.2",
   "pi": {
     "extensions": [
       "./src/index.ts"
     ]
   },
   "dependencies": {
+    "@mariozechner/pi-tui": "^0.69.0",
     "glimpseui": "^0.6.0"
   },
   "peerDependencies": {

@@ -28,8 +28,18 @@ The command:
 
 - macOS, Linux, or Windows
 - Node.js 20+
+- `pnpm` (this repo now uses `pnpm` for dependency management)
 - `pi` installed
 - internet access for the Tailwind and Monaco CDNs used by the review window
+
+To work with this repo:
+
+```bash
+pnpm install
+pnpm run check      # typecheck core extension code
+pnpm run check:web  # typecheck web UI code
+pnpm run build:web # rebuild web/app.js
+```
 
 ### Windows notes
 
