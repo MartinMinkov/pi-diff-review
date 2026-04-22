@@ -9,6 +9,10 @@ interface ReviewRuntimeDOM {
   cancelButton: HTMLButtonElement;
   overallCommentButton: HTMLButtonElement;
   fileCommentButton: HTMLButtonElement;
+  navigateBackButton: HTMLButtonElement;
+  navigateForwardButton: HTMLButtonElement;
+  showReferencesButton: HTMLButtonElement;
+  peekDefinitionButton: HTMLButtonElement;
   toggleReviewedButton: HTMLButtonElement;
   toggleUnchangedButton: HTMLButtonElement;
   toggleWrapButton: HTMLButtonElement;
@@ -24,6 +28,10 @@ interface ReviewRuntimeEventHandlers {
   onCancel: () => void;
   onShowOverallComment: () => void;
   onShowFileComment: () => void;
+  onNavigateBack: () => void;
+  onNavigateForward: () => void;
+  onShowReferences: () => void;
+  onPeekDefinition: () => void;
   onToggleReviewed: () => void;
   onToggleUnchanged: () => void;
   onToggleWrap: () => void;
@@ -66,6 +74,10 @@ export function createReviewRuntimeController(
       cancelButton,
       overallCommentButton,
       fileCommentButton,
+      navigateBackButton,
+      navigateForwardButton,
+      showReferencesButton,
+      peekDefinitionButton,
       toggleReviewedButton,
       toggleUnchangedButton,
       toggleWrapButton,
@@ -80,6 +92,10 @@ export function createReviewRuntimeController(
       onCancel,
       onShowOverallComment,
       onShowFileComment,
+      onNavigateBack,
+      onNavigateForward,
+      onShowReferences,
+      onPeekDefinition,
       onToggleReviewed,
       onToggleUnchanged,
       onToggleWrap,
@@ -109,6 +125,10 @@ export function createReviewRuntimeController(
     cancelButton.addEventListener("click", onCancel);
     overallCommentButton.addEventListener("click", onShowOverallComment);
     fileCommentButton.addEventListener("click", onShowFileComment);
+    navigateBackButton.addEventListener("click", onNavigateBack);
+    navigateForwardButton.addEventListener("click", onNavigateForward);
+    showReferencesButton.addEventListener("click", onShowReferences);
+    peekDefinitionButton.addEventListener("click", onPeekDefinition);
 
     toggleUnchangedButton.addEventListener("click", onToggleUnchanged);
     toggleWrapButton.addEventListener("click", onToggleWrap);

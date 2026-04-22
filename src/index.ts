@@ -1,4 +1,7 @@
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionCommandContext,
+} from "@mariozechner/pi-coding-agent";
 import { Key, matchesKey, truncateToWidth } from "@mariozechner/pi-tui";
 import { open, type GlimpseWindow } from "glimpseui";
 import { getReviewWindowData, loadReviewFileContents } from "./git.js";
@@ -14,22 +17,31 @@ import type {
 } from "./types.js";
 import { buildReviewHtml } from "./ui.js";
 
-function isSubmitPayload(value: ReviewWindowMessage): value is ReviewSubmitPayload {
+function isSubmitPayload(
+  value: ReviewWindowMessage,
+): value is ReviewSubmitPayload {
   return value.type === "submit";
 }
 
-function isCancelPayload(value: ReviewWindowMessage): value is ReviewCancelPayload {
+function isCancelPayload(
+  value: ReviewWindowMessage,
+): value is ReviewCancelPayload {
   return value.type === "cancel";
 }
 
-function isRequestFilePayload(value: ReviewWindowMessage): value is ReviewRequestFilePayload {
+function isRequestFilePayload(
+  value: ReviewWindowMessage,
+): value is ReviewRequestFilePayload {
   return value.type === "request-file";
 }
 
 type WaitingEditorResult = "escape" | "window-settled";
 
 function escapeForInlineScript(value: string): string {
-  return value.replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026");
+  return value
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/&/g, "\\u0026");
 }
 
 export default function (pi: ExtensionAPI) {
@@ -66,38 +78,46 @@ export default function (pi: ExtensionAPI) {
       }
     };
 
-    const promise = ctx.ui.custom<WaitingEditorResult>((_tui, theme, _kb, done) => {
-      doneFn = done;
-      if (pendingResult != null) {
-        const result = pendingResult;
-        pendingResult = null;
-        queueMicrotask(() => done(result));
-      }
+    const promise = ctx.ui.custom<WaitingEditorResult>(
+      (_tui, theme, _kb, done) => {
+        doneFn = done;
+        if (pendingResult != null) {
+          const result = pendingResult;
+          pendingResult = null;
+          queueMicrotask(() => done(result));
+        }
 
-      return {
-        render(width: number): string[] {
-          const innerWidth = Math.max(24, width - 2);
-          const borderTop = theme.fg("border", `╭${"─".repeat(innerWidth)}╮`);
-          const borderBottom = theme.fg("border", `╰${"─".repeat(innerWidth)}╯`);
-          const lines = [
-            theme.fg("accent", theme.bold("Waiting for review")),
-            "The native review window is open.",
-            "Press Escape to cancel and close the review window.",
-          ];
-          return [
-            borderTop,
-            ...lines.map((line) => `${theme.fg("border", "│")}${truncateToWidth(line, innerWidth, "...", true).padEnd(innerWidth, " ")}${theme.fg("border", "│")}`),
-            borderBottom,
-          ];
-        },
-        handleInput(data: string): void {
-          if (matchesKey(data, Key.escape)) {
-            finish("escape");
-          }
-        },
-        invalidate(): void {},
-      };
-    });
+        return {
+          render(width: number): string[] {
+            const innerWidth = Math.max(24, width - 2);
+            const borderTop = theme.fg("border", `╭${"─".repeat(innerWidth)}╮`);
+            const borderBottom = theme.fg(
+              "border",
+              `╰${"─".repeat(innerWidth)}╯`,
+            );
+            const lines = [
+              theme.fg("accent", theme.bold("Waiting for review")),
+              "The native review window is open.",
+              "Press Escape to cancel and close the review window.",
+            ];
+            return [
+              borderTop,
+              ...lines.map(
+                (line) =>
+                  `${theme.fg("border", "│")}${truncateToWidth(line, innerWidth, "...", true).padEnd(innerWidth, " ")}${theme.fg("border", "│")}`,
+              ),
+              borderBottom,
+            ];
+          },
+          handleInput(data: string): void {
+            if (matchesKey(data, Key.escape)) {
+              finish("escape");
+            }
+          },
+          invalidate(): void {},
+        };
+      },
+    );
 
     const dismiss = (): void => {
       finish("window-settled");
@@ -117,13 +137,16 @@ export default function (pi: ExtensionAPI) {
       return;
     }
 
-    const { repoRoot, files } = await getReviewWindowData(pi, ctx.cwd);
+    const { repoRoot, files, goModules } = await getReviewWindowData(
+      pi,
+      ctx.cwd,
+    );
     if (files.length === 0) {
       ctx.ui.notify("No reviewable files found.", "info");
       return;
     }
 
-    const html = buildReviewHtml({ repoRoot, files });
+    const html = buildReviewHtml({ repoRoot, files, goModules });
     const window = open(html, {
       width: 1680,
       height: 1020,
@@ -141,7 +164,10 @@ export default function (pi: ExtensionAPI) {
       window.send(`window.__reviewReceive(${payload});`);
     };
 
-    const loadContents = (file: ReviewFile, scope: ReviewRequestFilePayload["scope"]): Promise<ReviewFileContents> => {
+    const loadContents = (
+      file: ReviewFile,
+      scope: ReviewRequestFilePayload["scope"],
+    ): Promise<ReviewFileContents> => {
       const cacheKey = `${scope}:${file.id}`;
       const cached = contentCache.get(cacheKey);
       if (cached != null) return cached;
@@ -154,7 +180,9 @@ export default function (pi: ExtensionAPI) {
     ctx.ui.notify("Opened native review window.", "info");
 
     try {
-      const terminalMessagePromise = new Promise<ReviewSubmitPayload | ReviewCancelPayload | null>((resolve, reject) => {
+      const terminalMessagePromise = new Promise<
+        ReviewSubmitPayload | ReviewCancelPayload | null
+      >((resolve, reject) => {
         let settled = false;
 
         const cleanup = (): void => {
@@ -166,14 +194,18 @@ export default function (pi: ExtensionAPI) {
           }
         };
 
-        const settle = (value: ReviewSubmitPayload | ReviewCancelPayload | null): void => {
+        const settle = (
+          value: ReviewSubmitPayload | ReviewCancelPayload | null,
+        ): void => {
           if (settled) return;
           settled = true;
           cleanup();
           resolve(value);
         };
 
-        const handleRequestFile = async (message: ReviewRequestFilePayload): Promise<void> => {
+        const handleRequestFile = async (
+          message: ReviewRequestFilePayload,
+        ): Promise<void> => {
           const file = fileMap.get(message.fileId);
           if (file == null) {
             sendWindowMessage({
@@ -197,7 +229,8 @@ export default function (pi: ExtensionAPI) {
               modifiedContent: contents.modifiedContent,
             });
           } catch (error) {
-            const messageText = error instanceof Error ? error.message : String(error);
+            const messageText =
+              error instanceof Error ? error.message : String(error);
             sendWindowMessage({
               type: "file-error",
               requestId: message.requestId,
@@ -236,7 +269,10 @@ export default function (pi: ExtensionAPI) {
       });
 
       const result = await Promise.race([
-        terminalMessagePromise.then((message) => ({ type: "window" as const, message })),
+        terminalMessagePromise.then((message) => ({
+          type: "window" as const,
+          message,
+        })),
         waitingUI.promise.then((reason) => ({ type: "ui" as const, reason })),
       ]);
 
@@ -247,7 +283,10 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
-      const message = result.type === "window" ? result.message : await terminalMessagePromise;
+      const message =
+        result.type === "window"
+          ? result.message
+          : await terminalMessagePromise;
 
       waitingUI.dismiss();
       await waitingUI.promise;
@@ -270,7 +309,8 @@ export default function (pi: ExtensionAPI) {
   }
 
   pi.registerCommand("diff-review", {
-    description: "Open a native review window with git diff, last commit, and all files scopes",
+    description:
+      "Open a native review window with git diff, last commit, and all files scopes",
     handler: async (_args, ctx) => {
       await reviewRepository(ctx);
     },

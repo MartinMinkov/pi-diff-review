@@ -56,11 +56,11 @@ export function scopeLabel(scope: ReviewScope): string {
 export function scopeHint(scope: ReviewScope): string {
   switch (scope) {
     case "git-diff":
-      return "Review working tree changes against HEAD. Hover or click line numbers in the gutter to add an inline comment.";
+      return "Review working tree changes against HEAD. Hover or click line numbers in the gutter to add an inline comment. Cmd/Ctrl-click repo-local imports to jump to the referenced file, or use References for related review context.";
     case "last-commit":
-      return "Review the last commit against its parent. Hover or click line numbers in the gutter to add an inline comment.";
+      return "Review the last commit against its parent. Hover or click line numbers in the gutter to add an inline comment. Cmd/Ctrl-click repo-local imports to jump to the referenced file, or use References for related review context.";
     default:
-      return "Review the current working tree snapshot. Hover or click line numbers in the gutter to add a code review comment.";
+      return "Review the current working tree snapshot. Hover or click line numbers in the gutter to add a code review comment. Cmd/Ctrl-click repo-local imports to jump to the referenced file, or use References for related review context.";
   }
 }
 

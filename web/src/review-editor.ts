@@ -1,10 +1,17 @@
 import { inferLanguage } from "./utils.js";
+import { getReviewSymbolContext } from "./review-symbols.js";
 import type {
   DiffReviewComment,
   ReviewFile,
   ReviewScope,
   ReviewFileContents,
 } from "./types.js";
+import type {
+  ReviewNavigationTarget,
+  ReviewNavigationRequest,
+  ReviewNavigationSide,
+  ReviewNavigationResolver,
+} from "./review-navigation.js";
 import type {
   ReviewMountOptions,
   ReviewState,
@@ -16,7 +23,7 @@ interface MonacRequire {
   config(config: Record<string, unknown>): void;
 }
 
-type CommentSide = "original" | "modified";
+type CommentSide = ReviewNavigationSide;
 
 declare global {
   interface Window {
@@ -35,6 +42,11 @@ interface ReviewEditorOptions {
   activeFile: () => ReviewFile | null;
   activeFileShowsDiff: () => boolean;
   getScopeFilePath: (file: ReviewFile | null) => string;
+  getScopeSidePath: (
+    file: ReviewFile | null,
+    scope: ReviewScope,
+    side: ReviewNavigationSide,
+  ) => string;
   getScopeDisplayPath: (file: ReviewFile | null, scope: ReviewScope) => string;
   getRequestState: (fileId: string, scope: ReviewScope) => FileRequestState;
   ensureFileLoaded: (fileId: string, scope: ReviewScope) => void;
@@ -44,8 +56,20 @@ interface ReviewEditorOptions {
   ) => HTMLElement;
   addInlineComment: (fileId: string, side: CommentSide, line: number) => void;
   onCommentsChange: () => void;
+  onEditorContextChange: (context: {
+    navigationRequest: ReviewNavigationRequest | null;
+    navigationTarget: ReviewNavigationTarget | null;
+    symbolTitle: string | null;
+    symbolLine: number | null;
+  }) => void;
   renderFileComments: () => void;
   canCommentOnSide: (file: ReviewFile | null, side: CommentSide) => boolean;
+  resolveNavigationTarget: (
+    request: ReviewNavigationRequest,
+  ) => ReviewNavigationTarget | null;
+  describeNavigationTarget: (target: ReviewNavigationTarget) => string;
+  openNavigationTarget: (target: ReviewNavigationTarget) => void;
+  navigationResolver: ReviewNavigationResolver;
   editorContainerEl: HTMLDivElement;
   currentFileLabelEl: HTMLDivElement;
 }
@@ -62,6 +86,9 @@ interface ReviewEditorController {
   restoreScrollState: (scrollState: ReviewFileScrollState | null) => void;
   setupMonaco: (onReady?: () => void) => void;
   isActiveFileReady: () => boolean;
+  revealNavigationTarget: (target: ReviewNavigationTarget) => void;
+  getCurrentNavigationTarget: () => ReviewNavigationTarget | null;
+  getCurrentNavigationRequest: () => ReviewNavigationRequest | null;
 }
 
 interface ReviewEditorRequestResult {
@@ -81,14 +108,20 @@ export function createReviewEditor(
     activeFile,
     activeFileShowsDiff,
     getScopeFilePath,
+    getScopeSidePath,
     getScopeDisplayPath,
     getRequestState,
     ensureFileLoaded,
     renderCommentDOM,
     addInlineComment,
     onCommentsChange,
+    onEditorContextChange,
     renderFileComments,
     canCommentOnSide,
+    resolveNavigationTarget,
+    describeNavigationTarget,
+    openNavigationTarget,
+    navigationResolver,
     editorContainerEl,
     currentFileLabelEl,
   } = options;
@@ -101,6 +134,8 @@ export function createReviewEditor(
   let modifiedDecorations: any[] = [];
   let activeViewZones: Array<{ id: string; editor: unknown }> = [];
   let editorResizeObserver: ResizeObserver | null = null;
+  let pendingNavigationTarget: ReviewNavigationTarget | null = null;
+  let lastFocusedSide: ReviewNavigationSide = "modified";
 
   function saveCurrentScrollPosition() {
     if (!diffEditor || !state.activeFileId) return;
@@ -311,6 +346,125 @@ export function createReviewEditor(
     return getPlaceholderContents(file, scope);
   }
 
+  function getEditorForSide(side: ReviewNavigationSide): any {
+    if (!diffEditor) return null;
+    return side === "original"
+      ? diffEditor.getOriginalEditor()
+      : diffEditor.getModifiedEditor();
+  }
+
+  function getCurrentEditorContext(): {
+    file: ReviewFile;
+    side: ReviewNavigationSide;
+    editor: any;
+    model: any;
+    line: number;
+    column: number;
+  } | null {
+    const file = activeFile();
+    if (!file || !diffEditor) return null;
+
+    const side = activeFileShowsDiff() ? lastFocusedSide : "modified";
+    const editor = getEditorForSide(side) ?? diffEditor.getModifiedEditor();
+    const position = editor?.getPosition?.();
+    const visibleRange = editor?.getVisibleRanges?.()?.[0];
+    const line = Math.max(
+      1,
+      position?.lineNumber ?? visibleRange?.startLineNumber ?? 1,
+    );
+    const column = Math.max(1, position?.column ?? 1);
+    const model = editor?.getModel?.();
+    if (!model) return null;
+
+    return { file, side, editor, model, line, column };
+  }
+
+  function getCurrentNavigationTarget(): ReviewNavigationTarget | null {
+    const context = getCurrentEditorContext();
+    if (!context) return null;
+
+    return {
+      fileId: context.file.id,
+      scope: state.currentScope,
+      side: context.side,
+      line: context.line,
+      column: context.column,
+    };
+  }
+
+  function getCurrentNavigationRequest(): ReviewNavigationRequest | null {
+    const context = getCurrentEditorContext();
+    if (!context) return null;
+
+    const descriptor = navigationResolver.parseModelUri(context.model.uri);
+    if (!descriptor) return null;
+
+    return {
+      fileId: descriptor.fileId,
+      scope: descriptor.scope,
+      side: descriptor.side,
+      sourcePath: descriptor.sourcePath,
+      languageId:
+        context.model.getLanguageId?.() || inferLanguage(descriptor.sourcePath),
+      content: context.model.getValue(),
+      lineNumber: context.line,
+      column: context.column,
+    };
+  }
+
+  function emitEditorContextChange(): void {
+    const navigationRequest = getCurrentNavigationRequest();
+    const navigationTarget =
+      navigationRequest != null
+        ? resolveNavigationTarget(navigationRequest)
+        : null;
+    const symbolContext =
+      navigationRequest != null
+        ? getReviewSymbolContext(
+            navigationRequest.content,
+            navigationRequest.lineNumber,
+            navigationRequest.languageId,
+          )
+        : { title: null, lineNumber: null };
+
+    onEditorContextChange({
+      navigationRequest,
+      navigationTarget,
+      symbolTitle: symbolContext.title,
+      symbolLine: symbolContext.lineNumber,
+    });
+  }
+
+  function maybeRevealPendingNavigation(): void {
+    if (!pendingNavigationTarget || !diffEditor) return;
+    const file = activeFile();
+    if (!file || file.id !== pendingNavigationTarget.fileId) return;
+    if (state.currentScope !== pendingNavigationTarget.scope) return;
+    if (!isActiveFileReady()) return;
+
+    const targetEditor = getEditorForSide(pendingNavigationTarget.side);
+    const line = Math.max(1, pendingNavigationTarget.line || 1);
+    const column = Math.max(1, pendingNavigationTarget.column || 1);
+
+    targetEditor?.revealLineInCenter(line);
+    targetEditor?.setPosition({ lineNumber: line, column });
+    targetEditor?.focus();
+    lastFocusedSide = pendingNavigationTarget.side;
+    pendingNavigationTarget = null;
+  }
+
+  function revealNavigationTarget(target: ReviewNavigationTarget): void {
+    pendingNavigationTarget = target;
+    requestAnimationFrame(() => {
+      maybeRevealPendingNavigation();
+      emitEditorContextChange();
+      setTimeout(() => {
+        maybeRevealPendingNavigation();
+        emitEditorContextChange();
+      }, 50);
+    });
+  }
+
   function mountFile(mountOptions: ReviewMountOptions = {}): void {
     if (!diffEditor || !monacoApi) return;
     const file = activeFile();
@@ -349,10 +503,22 @@ export function createReviewEditor(
     originalModel = monacoApi.editor.createModel(
       contents.originalContent,
       language,
+      navigationResolver.buildModelUri(monacoApi, {
+        fileId: file.id,
+        scope: state.currentScope,
+        side: "original",
+        sourcePath: getScopeSidePath(file, state.currentScope, "original"),
+      }),
     );
     modifiedModel = monacoApi.editor.createModel(
       contents.modifiedContent,
       language,
+      navigationResolver.buildModelUri(monacoApi, {
+        fileId: file.id,
+        scope: state.currentScope,
+        side: "modified",
+        sourcePath: getScopeSidePath(file, state.currentScope, "modified"),
+      }),
     );
 
     diffEditor.setModel({ original: originalModel, modified: modifiedModel });
@@ -365,10 +531,14 @@ export function createReviewEditor(
       layoutEditor();
       if (mountOptions.restoreFileScroll) restoreFileScrollPosition();
       if (mountOptions.preserveScroll) restoreScrollState(scrollState);
+      maybeRevealPendingNavigation();
+      emitEditorContextChange();
       setTimeout(() => {
         layoutEditor();
         if (mountOptions.restoreFileScroll) restoreFileScrollPosition();
         if (mountOptions.preserveScroll) restoreScrollState(scrollState);
+        maybeRevealPendingNavigation();
+        emitEditorContextChange();
       }, 50);
     });
   }
@@ -431,6 +601,87 @@ export function createReviewEditor(
     });
   }
 
+  function registerNavigationSupport(): void {
+    const languages = ["typescript", "javascript", "go", "rust", "c", "cpp"];
+
+    for (const languageId of languages) {
+      const buildRequest = (
+        model: any,
+        position: any,
+      ): ReviewNavigationRequest | null => {
+        const context = navigationResolver.parseModelUri(model?.uri);
+        if (!context) return null;
+
+        return {
+          fileId: context.fileId,
+          scope: context.scope,
+          side: context.side,
+          sourcePath: context.sourcePath,
+          languageId,
+          content: model.getValue(),
+          lineNumber: position.lineNumber,
+          column: position.column,
+        };
+      };
+
+      monacoApi.languages.registerDefinitionProvider(languageId, {
+        provideDefinition(model: any, position: any) {
+          const request = buildRequest(model, position);
+          if (!request) return null;
+
+          const target = resolveNavigationTarget(request);
+          if (!target) return null;
+
+          return {
+            uri: navigationResolver.buildTargetUri(monacoApi, target),
+            range: new monacoApi.Range(
+              target.line,
+              target.column,
+              target.line,
+              target.column,
+            ),
+          };
+        },
+      });
+
+      monacoApi.languages.registerHoverProvider(languageId, {
+        provideHover(model: any, position: any) {
+          const request = buildRequest(model, position);
+          if (!request) return null;
+
+          const target = resolveNavigationTarget(request);
+          if (!target) return null;
+
+          return {
+            range: new monacoApi.Range(
+              position.lineNumber,
+              position.column,
+              position.lineNumber,
+              position.column,
+            ),
+            contents: [
+              {
+                value: `**Review navigation**\n\nTarget: \`${describeNavigationTarget(target)}\`\n\n- Cmd/Ctrl-click: open definition\n- References button: show related imports/usages\n- Peek button: preview target inline`,
+              },
+            ],
+          };
+        },
+      });
+    }
+
+    if (typeof monacoApi.editor.registerEditorOpener === "function") {
+      monacoApi.editor.registerEditorOpener({
+        openCodeEditor(_source: unknown, resource: unknown) {
+          const target = navigationResolver.parseTargetUri(resource);
+          if (!target) return false;
+          revealNavigationTarget(target);
+          openNavigationTarget(target);
+          return true;
+        },
+      });
+    }
+  }
+
   function setupMonaco(onReady?: () => void): void {
     const monacoRequire = window.require;
     if (!monacoRequire) {
@@ -482,6 +733,23 @@ export function createReviewEditor(
 
       createGlyphHoverActions(diffEditor.getOriginalEditor(), "original");
       createGlyphHoverActions(diffEditor.getModifiedEditor(), "modified");
+      diffEditor.getOriginalEditor().onDidFocusEditorText(() => {
+        lastFocusedSide = "original";
+        emitEditorContextChange();
+      });
+      diffEditor.getModifiedEditor().onDidFocusEditorText(() => {
+        lastFocusedSide = "modified";
+        emitEditorContextChange();
+      });
+      diffEditor.getOriginalEditor().onDidChangeCursorPosition(() => {
+        lastFocusedSide = "original";
+        emitEditorContextChange();
+      });
+      diffEditor.getModifiedEditor().onDidChangeCursorPosition(() => {
+        lastFocusedSide = "modified";
+        emitEditorContextChange();
+      });
+      registerNavigationSupport();
 
       if (typeof ResizeObserver !== "undefined") {
         editorResizeObserver = new ResizeObserver(() => {
@@ -512,6 +780,9 @@ export function createReviewEditor(
     restoreScrollState,
     setupMonaco,
     isActiveFileReady,
+    revealNavigationTarget,
+    getCurrentNavigationTarget,
+    getCurrentNavigationRequest,
   };
 }
 

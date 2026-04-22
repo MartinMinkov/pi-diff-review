@@ -80,7 +80,13 @@ export interface ReviewFileErrorMessage {
 
 export type ReviewHostMessage = ReviewFileDataMessage | ReviewFileErrorMessage;
 
+export interface ReviewGoModule {
+  rootPath: string;
+  modulePath: string;
+}
+
 export interface ReviewWindowData {
   repoRoot: string;
   files: ReviewFile[];
+  goModules: ReviewGoModule[];
 }

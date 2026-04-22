@@ -49,11 +49,11 @@
   function scopeHint(scope) {
     switch (scope) {
       case "git-diff":
-        return "Review working tree changes against HEAD. Hover or click line numbers in the gutter to add an inline comment.";
+        return "Review working tree changes against HEAD. Hover or click line numbers in the gutter to add an inline comment. Cmd/Ctrl-click repo-local imports to jump to the referenced file, or use References for related review context.";
       case "last-commit":
-        return "Review the last commit against its parent. Hover or click line numbers in the gutter to add an inline comment.";
+        return "Review the last commit against its parent. Hover or click line numbers in the gutter to add an inline comment. Cmd/Ctrl-click repo-local imports to jump to the referenced file, or use References for related review context.";
       default:
-        return "Review the current working tree snapshot. Hover or click line numbers in the gutter to add a code review comment.";
+        return "Review the current working tree snapshot. Hover or click line numbers in the gutter to add a code review comment. Cmd/Ctrl-click repo-local imports to jump to the referenced file, or use References for related review context.";
     }
   }
   function statusLabel(status) {
@@ -395,6 +395,7 @@
       fileTreeEl: document.getElementById("file-tree"),
       summaryEl: document.getElementById("summary"),
       currentFileLabelEl: document.getElementById("current-file-label"),
+      currentSymbolLabelEl: document.getElementById("current-symbol-label"),
       modeHintEl: document.getElementById("mode-hint"),
       fileCommentsContainer: document.getElementById("file-comments-container"),
       editorContainerEl: document.getElementById("editor-container"),
@@ -402,6 +403,10 @@
       cancelButton: document.getElementById("cancel-button"),
       overallCommentButton: document.getElementById("overall-comment-button"),
       fileCommentButton: document.getElementById("file-comment-button"),
+      navigateBackButton: document.getElementById("navigate-back-button"),
+      navigateForwardButton: document.getElementById("navigate-forward-button"),
+      showReferencesButton: document.getElementById("show-references-button"),
+      peekDefinitionButton: document.getElementById("peek-definition-button"),
       toggleReviewedButton: document.getElementById("toggle-reviewed-button"),
       toggleUnchangedButton: document.getElementById("toggle-unchanged-button"),
       toggleWrapButton: document.getElementById("toggle-wrap-button")
@@ -421,24 +426,11 @@
     textarea.addEventListener("paste", (event) => {
       const pasteData = event.clipboardData;
       const text = pasteData?.getData("text/plain");
-      if (text != null) {
-        event.preventDefault();
-        insertAtCursor(textarea, text);
-      }
-    });
-    textarea.addEventListener("keydown", async (event) => {
-      const isPasteShortcut = event.metaKey && event.key.toLowerCase() === "v" || event.ctrlKey && event.key.toLowerCase() === "v";
-      if (!isPasteShortcut)
+      if (text == null)
         return;
       event.preventDefault();
-      if (!navigator.clipboard?.readText)
-        return;
-      try {
-        const text = await navigator.clipboard.readText();
-        if (text != null) {
-          insertAtCursor(textarea, text);
-        }
-      } catch {}
+      insertAtCursor(textarea, text);
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
     });
   }
   function showTextModal(options) {
@@ -480,6 +472,116 @@
     if (textarea) {
       textarea.focus();
     }
+  }
+  function showReferenceModal(options) {
+    const backdrop = document.createElement("div");
+    backdrop.className = "review-modal-backdrop";
+    backdrop.innerHTML = `
+    <div class="review-modal-card">
+      <div class="mb-2 text-base font-semibold text-white">${escapeHtml(options.title)}</div>
+      <div class="mb-4 text-sm text-review-muted">${escapeHtml(options.description)}</div>
+      <div class="mb-3 flex flex-wrap items-center gap-2">
+        <button data-filter="changed" class="cursor-pointer rounded-md border border-review-border bg-review-panel px-3 py-1 text-xs font-medium text-review-text hover:bg-[#21262d]">Changed files only</button>
+        <button data-filter="scope" class="cursor-pointer rounded-md border border-review-border bg-review-panel px-3 py-1 text-xs font-medium text-review-text hover:bg-[#21262d]">Current scope only</button>
+      </div>
+      <div id="review-reference-list" class="scrollbar-thin max-h-[55vh] space-y-3 overflow-auto"></div>
+      <div class="mt-4 flex justify-end gap-2">
+        <button id="review-modal-close" class="cursor-pointer rounded-md border border-review-border bg-review-panel px-4 py-2 text-sm font-medium text-review-text hover:bg-[#21262d]">Close</button>
+      </div>
+    </div>
+  `;
+    document.body.appendChild(backdrop);
+    const closeButton = backdrop.querySelector("#review-modal-close");
+    const listEl = backdrop.querySelector("#review-reference-list");
+    const filterButtons = backdrop.querySelectorAll("[data-filter]");
+    const close = () => backdrop.remove();
+    const filters = {
+      changed: false,
+      scope: false
+    };
+    function renderItems() {
+      if (!listEl)
+        return;
+      const filteredItems = options.items.filter((item) => {
+        if (filters.changed && !item.isChanged)
+          return false;
+        if (filters.scope && !item.isCurrentScope)
+          return false;
+        return true;
+      });
+      listEl.innerHTML = filteredItems.length > 0 ? filteredItems.map((item, index) => `
+                <button data-reference-index="${index}" class="w-full rounded-md border border-review-border bg-[#010409] px-4 py-3 text-left hover:bg-[#11161d] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                  <div class="text-sm font-medium text-review-text">${escapeHtml(item.title)}</div>
+                  <div class="mt-1 text-xs text-review-muted">${escapeHtml(item.description)}</div>
+                  ${item.preview ? `<div class="mt-2 truncate text-xs text-[#8b949e]">${escapeHtml(item.preview)}</div>` : ""}
+                </button>
+              `).join("") : `<div class="rounded-md border border-review-border bg-[#010409] px-4 py-4 text-sm text-review-muted">${escapeHtml(options.emptyLabel ?? "No references found.")}</div>`;
+      listEl.querySelectorAll("[data-reference-index]").forEach((node) => {
+        node.addEventListener("click", () => {
+          const index = Number(node.getAttribute("data-reference-index") || "-1");
+          const filtered = options.items.filter((item2) => {
+            if (filters.changed && !item2.isChanged)
+              return false;
+            if (filters.scope && !item2.isCurrentScope)
+              return false;
+            return true;
+          });
+          const item = filtered[index];
+          if (!item)
+            return;
+          item.onSelect();
+          close();
+        });
+      });
+    }
+    if (closeButton) {
+      closeButton.addEventListener("click", close);
+    }
+    filterButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        const key = button.getAttribute("data-filter");
+        if (!key)
+          return;
+        filters[key] = !filters[key];
+        button.className = filters[key] ? "cursor-pointer rounded-md border border-[#2ea043]/40 bg-[#238636]/15 px-3 py-1 text-xs font-medium text-[#3fb950] hover:bg-[#238636]/25" : "cursor-pointer rounded-md border border-review-border bg-review-panel px-3 py-1 text-xs font-medium text-review-text hover:bg-[#21262d]";
+        renderItems();
+      });
+    });
+    backdrop.addEventListener("click", (event) => {
+      if (event.target === backdrop) {
+        close();
+      }
+    });
+    renderItems();
+    listEl?.querySelector("[data-reference-index]")?.focus();
+  }
+  function showPeekModal(options) {
+    const backdrop = document.createElement("div");
+    backdrop.className = "review-modal-backdrop";
+    backdrop.innerHTML = `
+    <div class="review-modal-card">
+      <div class="mb-2 text-base font-semibold text-white">${escapeHtml(options.title)}</div>
+      <div class="mb-4 text-sm text-review-muted">${escapeHtml(options.description)}</div>
+      <pre class="scrollbar-thin max-h-[55vh] overflow-auto rounded-md border border-review-border bg-[#010409] px-4 py-3 text-xs text-review-text">${escapeHtml(options.code)}</pre>
+      <div class="mt-4 flex justify-end gap-2">
+        <button id="review-modal-close" class="cursor-pointer rounded-md border border-review-border bg-review-panel px-4 py-2 text-sm font-medium text-review-text hover:bg-[#21262d]">Close</button>
+        <button id="review-modal-open" class="cursor-pointer rounded-md border border-[rgba(240,246,252,0.1)] bg-[#238636] px-4 py-2 text-sm font-medium text-white hover:bg-[#2ea043]">${escapeHtml(options.openLabel ?? "Open definition")}</button>
+      </div>
+    </div>
+  `;
+    document.body.appendChild(backdrop);
+    const closeButton = backdrop.querySelector("#review-modal-close");
+    const openButton = backdrop.querySelector("#review-modal-open");
+    const close = () => backdrop.remove();
+    closeButton?.addEventListener("click", close);
+    openButton?.addEventListener("click", () => {
+      options.onOpen();
+      close();
+    });
+    backdrop.addEventListener("click", (event) => {
+      if (event.target === backdrop)
+        close();
+    });
   }
   function renderCommentDOM(comment, scopeLabel2, onDelete) {
     const container = document.createElement("div");
@@ -556,6 +658,57 @@
     };
   }
 
+  // web/src/review-symbols.ts
+  function getReviewSymbolContext(content, lineNumber, languageId) {
+    const lines = content.split(/\r?\n/);
+    const maxIndex = Math.min(Math.max(lineNumber - 1, 0), lines.length - 1);
+    for (let index = maxIndex;index >= 0; index -= 1) {
+      const line = lines[index] || "";
+      const title = matchSymbolLine(line, languageId);
+      if (title) {
+        return { title, lineNumber: index + 1 };
+      }
+    }
+    return { title: null, lineNumber: null };
+  }
+  function buildPreviewSnippet(content, lineNumber, contextRadius = 3) {
+    const lines = content.split(/\r?\n/);
+    if (lines.length === 0)
+      return "";
+    const targetIndex = Math.min(Math.max(lineNumber - 1, 0), lines.length - 1);
+    const start = Math.max(0, targetIndex - contextRadius);
+    const end = Math.min(lines.length - 1, targetIndex + contextRadius);
+    return lines.slice(start, end + 1).map((line, offset) => {
+      const currentLine = start + offset + 1;
+      const prefix = currentLine === targetIndex + 1 ? ">" : " ";
+      return `${prefix} ${String(currentLine).padStart(4, " ")} ${line}`;
+    }).join(`
+`);
+  }
+  function matchSymbolLine(line, languageId) {
+    const trimmed = line.trim();
+    if (!trimmed)
+      return null;
+    switch (languageId) {
+      case "typescript":
+      case "javascript":
+        return capture(trimmed, /^(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/) || capture(trimmed, /^(?:export\s+)?class\s+([A-Za-z_$][\w$]*)/) || capture(trimmed, /^(?:export\s+)?interface\s+([A-Za-z_$][\w$]*)/) || capture(trimmed, /^(?:export\s+)?type\s+([A-Za-z_$][\w$]*)/) || capture(trimmed, /^(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?\(/) || capture(trimmed, /^(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?[A-Za-z_$][\w$]*\s*=>/) || capture(trimmed, /^([A-Za-z_$][\w$]*)\s*\(/);
+      case "go":
+        return capture(trimmed, /^func\s+(?:\([^)]*\)\s*)?([A-Za-z_][\w]*)/) || capture(trimmed, /^type\s+([A-Za-z_][\w]*)\s+(?:struct|interface)/) || capture(trimmed, /^var\s+([A-Za-z_][\w]*)/) || capture(trimmed, /^const\s+([A-Za-z_][\w]*)/);
+      case "rust":
+        return capture(trimmed, /^(?:pub\s+)?fn\s+([A-Za-z_][\w]*)/) || capture(trimmed, /^impl\s+([A-Za-z_][\w]*)/) || capture(trimmed, /^(?:pub\s+)?(?:struct|enum|trait|mod)\s+([A-Za-z_][\w]*)/);
+      case "c":
+      case "cpp":
+        return capture(trimmed, /^(?:class|struct|enum)\s+([A-Za-z_][\w]*)/) || capture(trimmed, /^(?:static\s+)?(?:inline\s+)?[A-Za-z_][\w:\s*&<>]*\s+([A-Za-z_][\w]*)\s*\([^;]*\)\s*(?:\{|$)/);
+      default:
+        return null;
+    }
+  }
+  function capture(value, pattern) {
+    const match = value.match(pattern);
+    return match?.[1] || null;
+  }
+
   // web/src/review-editor.ts
   function scrollKey(scope, fileId) {
     return `${scope}:${fileId}`;
@@ -566,14 +719,20 @@
       activeFile,
       activeFileShowsDiff,
       getScopeFilePath,
+      getScopeSidePath,
       getScopeDisplayPath,
       getRequestState,
       ensureFileLoaded,
       renderCommentDOM: renderCommentDOM2,
       addInlineComment,
       onCommentsChange,
+      onEditorContextChange,
       renderFileComments,
       canCommentOnSide,
+      resolveNavigationTarget,
+      describeNavigationTarget,
+      openNavigationTarget,
+      navigationResolver,
       editorContainerEl,
       currentFileLabelEl
     } = options;
@@ -585,6 +744,8 @@
     let modifiedDecorations = [];
     let activeViewZones = [];
     let editorResizeObserver = null;
+    let pendingNavigationTarget = null;
+    let lastFocusedSide = "modified";
     function saveCurrentScrollPosition() {
       if (!diffEditor || !state.activeFileId)
         return;
@@ -755,6 +916,97 @@ ${requestState.error}`;
       }
       return getPlaceholderContents(file, scope);
     }
+    function getEditorForSide(side) {
+      if (!diffEditor)
+        return null;
+      return side === "original" ? diffEditor.getOriginalEditor() : diffEditor.getModifiedEditor();
+    }
+    function getCurrentEditorContext() {
+      const file = activeFile();
+      if (!file || !diffEditor)
+        return null;
+      const side = activeFileShowsDiff() ? lastFocusedSide : "modified";
+      const editor = getEditorForSide(side) ?? diffEditor.getModifiedEditor();
+      const position = editor?.getPosition?.();
+      const visibleRange = editor?.getVisibleRanges?.()?.[0];
+      const line = Math.max(1, position?.lineNumber ?? visibleRange?.startLineNumber ?? 1);
+      const column = Math.max(1, position?.column ?? 1);
+      const model = editor?.getModel?.();
+      if (!model)
+        return null;
+      return { file, side, editor, model, line, column };
+    }
+    function getCurrentNavigationTarget() {
+      const context = getCurrentEditorContext();
+      if (!context)
+        return null;
+      return {
+        fileId: context.file.id,
+        scope: state.currentScope,
+        side: context.side,
+        line: context.line,
+        column: context.column
+      };
+    }
+    function getCurrentNavigationRequest() {
+      const context = getCurrentEditorContext();
+      if (!context)
+        return null;
+      const descriptor = navigationResolver.parseModelUri(context.model.uri);
+      if (!descriptor)
+        return null;
+      return {
+        fileId: descriptor.fileId,
+        scope: descriptor.scope,
+        side: descriptor.side,
+        sourcePath: descriptor.sourcePath,
+        languageId: context.model.getLanguageId?.() || inferLanguage(descriptor.sourcePath),
+        content: context.model.getValue(),
+        lineNumber: context.line,
+        column: context.column
+      };
+    }
+    function emitEditorContextChange() {
+      const navigationRequest = getCurrentNavigationRequest();
+      const navigationTarget = navigationRequest != null ? resolveNavigationTarget(navigationRequest) : null;
+      const symbolContext = navigationRequest != null ? getReviewSymbolContext(navigationRequest.content, navigationRequest.lineNumber, navigationRequest.languageId) : { title: null, lineNumber: null };
+      onEditorContextChange({
+        navigationRequest,
+        navigationTarget,
+        symbolTitle: symbolContext.title,
+        symbolLine: symbolContext.lineNumber
+      });
+    }
+    function maybeRevealPendingNavigation() {
+      if (!pendingNavigationTarget || !diffEditor)
+        return;
+      const file = activeFile();
+      if (!file || file.id !== pendingNavigationTarget.fileId)
+        return;
+      if (state.currentScope !== pendingNavigationTarget.scope)
+        return;
+      if (!isActiveFileReady())
+        return;
+      const targetEditor = getEditorForSide(pendingNavigationTarget.side);
+      const line = Math.max(1, pendingNavigationTarget.line || 1);
+      const column = Math.max(1, pendingNavigationTarget.column || 1);
+      targetEditor?.revealLineInCenter(line);
+      targetEditor?.setPosition({ lineNumber: line, column });
+      targetEditor?.focus();
+      lastFocusedSide = pendingNavigationTarget.side;
+      pendingNavigationTarget = null;
+    }
+    function revealNavigationTarget(target) {
+      pendingNavigationTarget = target;
+      requestAnimationFrame(() => {
+        maybeRevealPendingNavigation();
+        emitEditorContextChange();
+        setTimeout(() => {
+          maybeRevealPendingNavigation();
+          emitEditorContextChange();
+        }, 50);
+      });
+    }
     function mountFile(mountOptions = {}) {
       if (!diffEditor || !monacoApi)
         return;
@@ -786,8 +1038,18 @@ ${requestState.error}`;
         originalModel.dispose();
       if (modifiedModel)
         modifiedModel.dispose();
-      originalModel = monacoApi.editor.createModel(contents.originalContent, language);
-      modifiedModel = monacoApi.editor.createModel(contents.modifiedContent, language);
+      originalModel = monacoApi.editor.createModel(contents.originalContent, language, navigationResolver.buildModelUri(monacoApi, {
+        fileId: file.id,
+        scope: state.currentScope,
+        side: "original",
+        sourcePath: getScopeSidePath(file, state.currentScope, "original")
+      }));
+      modifiedModel = monacoApi.editor.createModel(contents.modifiedContent, language, navigationResolver.buildModelUri(monacoApi, {
+        fileId: file.id,
+        scope: state.currentScope,
+        side: "modified",
+        sourcePath: getScopeSidePath(file, state.currentScope, "modified")
+      }));
       diffEditor.setModel({ original: originalModel, modified: modifiedModel });
       applyEditorOptions();
       syncViewZones();
@@ -799,12 +1061,16 @@ ${requestState.error}`;
           restoreFileScrollPosition();
         if (mountOptions.preserveScroll)
           restoreScrollState(scrollState);
+        maybeRevealPendingNavigation();
+        emitEditorContextChange();
         setTimeout(() => {
           layoutEditor();
           if (mountOptions.restoreFileScroll)
             restoreFileScrollPosition();
           if (mountOptions.preserveScroll)
             restoreScrollState(scrollState);
+          maybeRevealPendingNavigation();
+          emitEditorContextChange();
         }, 50);
       });
     }
@@ -855,6 +1121,76 @@ ${requestState.error}`;
         }
       });
     }
+    function registerNavigationSupport() {
+      const languages = ["typescript", "javascript", "go", "rust", "c", "cpp"];
+      for (const languageId of languages) {
+        const buildRequest = (model, position) => {
+          const context = navigationResolver.parseModelUri(model?.uri);
+          if (!context)
+            return null;
+          return {
+            fileId: context.fileId,
+            scope: context.scope,
+            side: context.side,
+            sourcePath: context.sourcePath,
+            languageId,
+            content: model.getValue(),
+            lineNumber: position.lineNumber,
+            column: position.column
+          };
+        };
+        monacoApi.languages.registerDefinitionProvider(languageId, {
+          provideDefinition(model, position) {
+            const request = buildRequest(model, position);
+            if (!request)
+              return null;
+            const target = resolveNavigationTarget(request);
+            if (!target)
+              return null;
+            return {
+              uri: navigationResolver.buildTargetUri(monacoApi, target),
+              range: new monacoApi.Range(target.line, target.column, target.line, target.column)
+            };
+          }
+        });
+        monacoApi.languages.registerHoverProvider(languageId, {
+          provideHover(model, position) {
+            const request = buildRequest(model, position);
+            if (!request)
+              return null;
+            const target = resolveNavigationTarget(request);
+            if (!target)
+              return null;
+            return {
+              range: new monacoApi.Range(position.lineNumber, position.column, position.lineNumber, position.column),
+              contents: [
+                {
+                  value: `**Review navigation**
+
+Target: \`${describeNavigationTarget(target)}\`
+
+- Cmd/Ctrl-click: open definition
+- References button: show related imports/usages
+- Peek button: preview target inline`
+                }
+              ]
+            };
+          }
+        });
+      }
+      if (typeof monacoApi.editor.registerEditorOpener === "function") {
+        monacoApi.editor.registerEditorOpener({
+          openCodeEditor(_source, resource) {
+            const target = navigationResolver.parseTargetUri(resource);
+            if (!target)
+              return false;
+            revealNavigationTarget(target);
+            openNavigationTarget(target);
+            return true;
+          }
+        });
+      }
+    }
     function setupMonaco(onReady) {
       const monacoRequire = window.require;
       if (!monacoRequire) {
@@ -901,6 +1237,23 @@ ${requestState.error}`;
         });
         createGlyphHoverActions(diffEditor.getOriginalEditor(), "original");
         createGlyphHoverActions(diffEditor.getModifiedEditor(), "modified");
+        diffEditor.getOriginalEditor().onDidFocusEditorText(() => {
+          lastFocusedSide = "original";
+          emitEditorContextChange();
+        });
+        diffEditor.getModifiedEditor().onDidFocusEditorText(() => {
+          lastFocusedSide = "modified";
+          emitEditorContextChange();
+        });
+        diffEditor.getOriginalEditor().onDidChangeCursorPosition(() => {
+          lastFocusedSide = "original";
+          emitEditorContextChange();
+        });
+        diffEditor.getModifiedEditor().onDidChangeCursorPosition(() => {
+          lastFocusedSide = "modified";
+          emitEditorContextChange();
+        });
+        registerNavigationSupport();
         if (typeof ResizeObserver !== "undefined") {
           editorResizeObserver = new ResizeObserver(() => {
             layoutEditor();
@@ -926,8 +1279,603 @@ ${requestState.error}`;
       captureScrollState,
       restoreScrollState,
       setupMonaco,
-      isActiveFileReady
+      isActiveFileReady,
+      revealNavigationTarget,
+      getCurrentNavigationTarget,
+      getCurrentNavigationRequest
     };
+  }
+
+  // web/src/review-navigation.ts
+  var REVIEW_MODEL_SCHEME = "review-model";
+  var REVIEW_TARGET_SCHEME = "review-target";
+  var TS_LIKE_EXTENSIONS = [
+    ".ts",
+    ".tsx",
+    ".mts",
+    ".cts",
+    ".js",
+    ".jsx",
+    ".mjs",
+    ".cjs",
+    ".json"
+  ];
+  function createReviewNavigationResolver(reviewData) {
+    const context = {
+      files: reviewData.files,
+      goModules: reviewData.goModules ?? []
+    };
+    const fileById = new Map(reviewData.files.map((file) => [file.id, file]));
+    const fileByPath = new Map(reviewData.files.map((file) => [normalizePath(file.path), file]));
+    const filePathSet = new Set(fileByPath.keys());
+    const cargoRoots = [...filePathSet].filter((path) => path === "Cargo.toml" || path.endsWith("/Cargo.toml")).map((path) => dirname(path)).sort((a, b) => b.length - a.length);
+    function buildModelUri(monacoApi, descriptor) {
+      return monacoApi.Uri.from({
+        scheme: REVIEW_MODEL_SCHEME,
+        path: `/${encodeURIComponent(descriptor.fileId)}/${descriptor.side}`,
+        query: new URLSearchParams({
+          scope: descriptor.scope,
+          sourcePath: descriptor.sourcePath
+        }).toString()
+      });
+    }
+    function buildTargetUri(monacoApi, target) {
+      return monacoApi.Uri.from({
+        scheme: REVIEW_TARGET_SCHEME,
+        path: `/${encodeURIComponent(target.fileId)}/${target.side}`,
+        query: new URLSearchParams({
+          scope: target.scope,
+          line: String(target.line),
+          column: String(target.column)
+        }).toString()
+      });
+    }
+    function parseModelUri(uri) {
+      if (!uri || typeof uri !== "object")
+        return null;
+      const value = uri;
+      if (value.scheme !== REVIEW_MODEL_SCHEME)
+        return null;
+      const parts = String(value.path || "").split("/").filter(Boolean);
+      if (parts.length < 2)
+        return null;
+      const params = new URLSearchParams(String(value.query || ""));
+      const scope = params.get("scope");
+      const sourcePath = params.get("sourcePath") || "";
+      const side = parts[1];
+      if (!isReviewScope(scope) || !isNavigationSide(side))
+        return null;
+      return {
+        fileId: decodeURIComponent(parts[0]),
+        scope,
+        side,
+        sourcePath
+      };
+    }
+    function parseTargetUri(uri) {
+      if (!uri || typeof uri !== "object")
+        return null;
+      const value = uri;
+      if (value.scheme !== REVIEW_TARGET_SCHEME)
+        return null;
+      const parts = String(value.path || "").split("/").filter(Boolean);
+      if (parts.length < 2)
+        return null;
+      const params = new URLSearchParams(String(value.query || ""));
+      const scope = params.get("scope");
+      const line = Number(params.get("line") || "1");
+      const column = Number(params.get("column") || "1");
+      const side = parts[1];
+      if (!isReviewScope(scope) || !isNavigationSide(side))
+        return null;
+      return {
+        fileId: decodeURIComponent(parts[0]),
+        scope,
+        side,
+        line: Number.isFinite(line) && line > 0 ? line : 1,
+        column: Number.isFinite(column) && column > 0 ? column : 1
+      };
+    }
+    function resolveTarget(request) {
+      const sourceFile = fileById.get(request.fileId);
+      if (!sourceFile)
+        return null;
+      const normalizedSourcePath = normalizePath(request.sourcePath || sourceFile.path);
+      const targetPath = resolvePathForLanguage(context, {
+        ...request,
+        sourcePath: normalizedSourcePath
+      }, filePathSet, cargoRoots);
+      if (!targetPath)
+        return null;
+      const targetFile = fileByPath.get(normalizePath(targetPath));
+      if (!targetFile)
+        return null;
+      return chooseNavigationTarget(targetFile, request.scope, request.side);
+    }
+    function findReferences(request, files) {
+      const target = resolveTarget(request);
+      if (!target)
+        return [];
+      const matches = [];
+      for (const file of files) {
+        const candidates = collectNavigationRequests(file);
+        for (const candidate of candidates) {
+          const resolved = resolveTarget(candidate);
+          if (!resolved || resolved.fileId !== target.fileId)
+            continue;
+          if (candidate.fileId === request.fileId && candidate.scope === request.scope && candidate.side === request.side && candidate.lineNumber === request.lineNumber) {
+            continue;
+          }
+          matches.push({
+            target: {
+              fileId: candidate.fileId,
+              scope: candidate.scope,
+              side: candidate.side,
+              line: candidate.lineNumber,
+              column: candidate.column
+            },
+            sourcePath: candidate.sourcePath,
+            lineNumber: candidate.lineNumber,
+            column: candidate.column,
+            lineText: getLineText(candidate.content, candidate.lineNumber)
+          });
+        }
+      }
+      return matches;
+    }
+    return {
+      resolveTarget,
+      findReferences,
+      buildModelUri,
+      buildTargetUri,
+      parseModelUri,
+      parseTargetUri
+    };
+  }
+  function chooseNavigationTarget(file, scope, side) {
+    if (scope === "git-diff" && file.inGitDiff) {
+      if (side === "original" && file.gitDiff?.hasOriginal) {
+        return { fileId: file.id, scope, side, line: 1, column: 1 };
+      }
+      if (side === "modified" && file.gitDiff?.hasModified) {
+        return { fileId: file.id, scope, side, line: 1, column: 1 };
+      }
+      return {
+        fileId: file.id,
+        scope,
+        side: file.gitDiff?.hasModified ? "modified" : "original",
+        line: 1,
+        column: 1
+      };
+    }
+    if (scope === "last-commit" && file.inLastCommit) {
+      if (side === "original" && file.lastCommit?.hasOriginal) {
+        return { fileId: file.id, scope, side, line: 1, column: 1 };
+      }
+      if (side === "modified" && file.lastCommit?.hasModified) {
+        return { fileId: file.id, scope, side, line: 1, column: 1 };
+      }
+      return {
+        fileId: file.id,
+        scope,
+        side: file.lastCommit?.hasModified ? "modified" : "original",
+        line: 1,
+        column: 1
+      };
+    }
+    return {
+      fileId: file.id,
+      scope: "all-files",
+      side: "modified",
+      line: 1,
+      column: 1
+    };
+  }
+  function resolvePathForLanguage(context, request, filePathSet, cargoRoots) {
+    switch (request.languageId) {
+      case "typescript":
+      case "javascript":
+        return resolveTsLikeImportPath(request, filePathSet);
+      case "go":
+        return resolveGoImportPath(context.goModules, request, filePathSet);
+      case "rust":
+        return resolveRustImportPath(request, filePathSet, cargoRoots);
+      case "c":
+      case "cpp":
+        return resolveQuotedIncludePath(request, filePathSet);
+      default:
+        return null;
+    }
+  }
+  function collectNavigationRequests(file) {
+    switch (file.languageId) {
+      case "typescript":
+      case "javascript":
+        return collectTsLikeRequests(file);
+      case "go":
+        return collectGoRequests(file);
+      case "rust":
+        return collectRustRequests(file);
+      case "c":
+      case "cpp":
+        return collectIncludeRequests(file);
+      default:
+        return [];
+    }
+  }
+  function collectTsLikeRequests(file) {
+    const requests = [];
+    const lines = file.content.split(/\r?\n/);
+    const patterns = [
+      /\bfrom\s+(["'])([^"']+)\1/g,
+      /\bimport\s*\(\s*(["'])([^"']+)\1/g,
+      /\brequire\s*\(\s*(["'])([^"']+)\1/g,
+      /^\s*import\s+(["'])([^"']+)\1/g
+    ];
+    lines.forEach((line, index) => {
+      const seenColumns = new Set;
+      for (const pattern of patterns) {
+        let match;
+        while ((match = pattern.exec(line)) != null) {
+          const value = match[2] || "";
+          const valueIndex = match[0].indexOf(value);
+          if (valueIndex < 0)
+            continue;
+          const column = match.index + valueIndex + 1;
+          if (seenColumns.has(column))
+            continue;
+          seenColumns.add(column);
+          requests.push({
+            fileId: file.fileId,
+            scope: file.scope,
+            side: file.side,
+            sourcePath: file.sourcePath,
+            languageId: file.languageId,
+            content: file.content,
+            lineNumber: index + 1,
+            column
+          });
+        }
+      }
+    });
+    return requests;
+  }
+  function collectGoRequests(file) {
+    const requests = [];
+    const lines = file.content.split(/\r?\n/);
+    let inImportBlock = false;
+    lines.forEach((line, index) => {
+      const trimmed = line.trim();
+      if (/^import\s*\($/.test(trimmed)) {
+        inImportBlock = true;
+        return;
+      }
+      if (inImportBlock && trimmed === ")") {
+        inImportBlock = false;
+        return;
+      }
+      const shouldInspect = /^import\s+/.test(trimmed) || inImportBlock;
+      if (!shouldInspect)
+        return;
+      const pattern = /"([^"\\]*(?:\\.[^"\\]*)*)"/g;
+      let match;
+      while ((match = pattern.exec(line)) != null) {
+        requests.push({
+          fileId: file.fileId,
+          scope: file.scope,
+          side: file.side,
+          sourcePath: file.sourcePath,
+          languageId: file.languageId,
+          content: file.content,
+          lineNumber: index + 1,
+          column: match.index + 2
+        });
+      }
+    });
+    return requests;
+  }
+  function collectRustRequests(file) {
+    const requests = [];
+    const lines = file.content.split(/\r?\n/);
+    lines.forEach((line, index) => {
+      const modMatch = line.match(/^\s*(?:pub\s+)?mod\s+([A-Za-z_][A-Za-z0-9_]*)\s*;/);
+      if (modMatch) {
+        const moduleName = modMatch[1];
+        const start = line.indexOf(moduleName);
+        requests.push({
+          fileId: file.fileId,
+          scope: file.scope,
+          side: file.side,
+          sourcePath: file.sourcePath,
+          languageId: file.languageId,
+          content: file.content,
+          lineNumber: index + 1,
+          column: start + 1
+        });
+      }
+      const useMatch = line.match(/^\s*(?:pub\s+)?use\s+(.+?)\s*;/);
+      if (useMatch) {
+        const usePath = useMatch[1].split(" as ")[0].split("::{")[0].trim();
+        const start = line.indexOf(usePath);
+        if (start >= 0) {
+          requests.push({
+            fileId: file.fileId,
+            scope: file.scope,
+            side: file.side,
+            sourcePath: file.sourcePath,
+            languageId: file.languageId,
+            content: file.content,
+            lineNumber: index + 1,
+            column: start + 1
+          });
+        }
+      }
+    });
+    return requests;
+  }
+  function collectIncludeRequests(file) {
+    const requests = [];
+    const lines = file.content.split(/\r?\n/);
+    lines.forEach((line, index) => {
+      if (!line.includes("#include"))
+        return;
+      const pattern = /"([^"\\]*(?:\\.[^"\\]*)*)"/g;
+      let match;
+      while ((match = pattern.exec(line)) != null) {
+        requests.push({
+          fileId: file.fileId,
+          scope: file.scope,
+          side: file.side,
+          sourcePath: file.sourcePath,
+          languageId: file.languageId,
+          content: file.content,
+          lineNumber: index + 1,
+          column: match.index + 2
+        });
+      }
+    });
+    return requests;
+  }
+  function resolveTsLikeImportPath(request, filePathSet) {
+    const match = getStringLiteralAtCursor(request);
+    if (!match)
+      return null;
+    if (!match.value.startsWith(".") && !match.value.startsWith("/"))
+      return null;
+    const basePath = match.value.startsWith("/") ? normalizePath(match.value.slice(1)) : normalizePath(joinPath(dirname(request.sourcePath), match.value));
+    return findFirstExistingPath(buildTsLikeCandidates(basePath), filePathSet);
+  }
+  function buildTsLikeCandidates(basePath) {
+    const candidates = new Set;
+    const extension = getExtension(basePath);
+    candidates.add(basePath);
+    if (!extension) {
+      for (const item of TS_LIKE_EXTENSIONS) {
+        candidates.add(`${basePath}${item}`);
+        candidates.add(joinPath(basePath, `index${item}`));
+      }
+    } else if ([".js", ".jsx", ".mjs", ".cjs"].includes(extension)) {
+      const withoutExtension = stripExtension(basePath);
+      for (const item of TS_LIKE_EXTENSIONS) {
+        candidates.add(`${withoutExtension}${item}`);
+      }
+    }
+    return [...candidates];
+  }
+  function resolveGoImportPath(goModules, request, filePathSet) {
+    const match = getStringLiteralAtCursor(request);
+    if (!match)
+      return null;
+    const module = [...goModules].filter((item) => match.value === item.modulePath || match.value.startsWith(`${item.modulePath}/`)).sort((a, b) => b.modulePath.length - a.modulePath.length)[0];
+    if (!module)
+      return null;
+    const suffix = match.value.slice(module.modulePath.length).replace(/^\//, "");
+    const targetDir = normalizePath(suffix ? joinPath(module.rootPath, suffix) : module.rootPath);
+    return pickGoPackageFile(targetDir, filePathSet);
+  }
+  function pickGoPackageFile(targetDir, filePathSet) {
+    const candidates = [...filePathSet].filter((path) => dirname(path) === targetDir).filter((path) => path.endsWith(".go")).sort((a, b) => a.localeCompare(b));
+    if (candidates.length === 0)
+      return null;
+    const directoryName = baseName(targetDir);
+    const preferred = candidates.find((path) => !path.endsWith("_test.go") && (baseName(path) === `${directoryName}.go` || baseName(path) === "doc.go"));
+    return preferred ?? candidates.find((path) => !path.endsWith("_test.go")) ?? candidates[0];
+  }
+  function resolveRustImportPath(request, filePathSet, cargoRoots) {
+    const sourcePath = normalizePath(request.sourcePath);
+    const cargoRoot = cargoRoots.find((root) => sourcePath === `${root}/src/lib.rs` || sourcePath === `${root}/src/main.rs` || sourcePath.startsWith(`${root}/src/`));
+    if (cargoRoot == null)
+      return null;
+    const srcRoot = normalizePath(joinPath(cargoRoot, "src"));
+    const modDeclaration = getRustModDeclaration(request);
+    if (modDeclaration) {
+      return findFirstExistingPath(buildRustModCandidates(sourcePath, modDeclaration), filePathSet);
+    }
+    const usePath = getRustUsePath(request);
+    if (!usePath)
+      return null;
+    const absoluteSegments = resolveRustAbsoluteSegments(usePath, sourcePath, srcRoot);
+    if (absoluteSegments == null || absoluteSegments.length === 0)
+      return null;
+    for (let index = absoluteSegments.length;index >= 1; index -= 1) {
+      const prefix = absoluteSegments.slice(0, index);
+      const candidates = [
+        `${joinPath(srcRoot, ...prefix)}.rs`,
+        joinPath(srcRoot, ...prefix, "mod.rs")
+      ];
+      const target = findFirstExistingPath(candidates, filePathSet);
+      if (target)
+        return target;
+    }
+    return null;
+  }
+  function getRustModDeclaration(request) {
+    const line = getLineContent(request);
+    const match = line.match(/^\s*(?:pub\s+)?mod\s+([A-Za-z_][A-Za-z0-9_]*)\s*;/);
+    if (!match)
+      return null;
+    const moduleName = match[1];
+    const start = line.indexOf(moduleName) + 1;
+    const end = start + moduleName.length;
+    if (request.column < start || request.column > end)
+      return null;
+    return moduleName;
+  }
+  function buildRustModCandidates(sourcePath, moduleName) {
+    const normalizedSourcePath = normalizePath(sourcePath);
+    const fileName = baseName(normalizedSourcePath);
+    const baseDir = fileName === "lib.rs" || fileName === "main.rs" ? dirname(normalizedSourcePath) : fileName === "mod.rs" ? dirname(normalizedSourcePath) : stripExtension(normalizedSourcePath);
+    return [
+      joinPath(baseDir, `${moduleName}.rs`),
+      joinPath(baseDir, moduleName, "mod.rs")
+    ];
+  }
+  function getRustUsePath(request) {
+    const line = getLineContent(request);
+    const match = line.match(/^\s*(?:pub\s+)?use\s+(.+?)\s*;/);
+    if (!match)
+      return null;
+    const usePath = match[1];
+    const start = line.indexOf(usePath) + 1;
+    const end = start + usePath.length;
+    if (request.column < start || request.column > end)
+      return null;
+    return usePath.split(" as ")[0].split("::{")[0].trim();
+  }
+  function resolveRustAbsoluteSegments(usePath, sourcePath, srcRoot) {
+    const segments = usePath.split("::").filter(Boolean);
+    if (segments.length === 0)
+      return null;
+    if (segments[0] === "crate") {
+      return segments.slice(1);
+    }
+    if (segments[0] === "self" || segments[0] === "super") {
+      const currentSegments = getRustModuleSegments(sourcePath, srcRoot);
+      if (currentSegments == null)
+        return null;
+      let index = 0;
+      let resolved = [...currentSegments];
+      while (segments[index] === "super") {
+        resolved = resolved.slice(0, -1);
+        index += 1;
+      }
+      if (segments[index] === "self") {
+        index += 1;
+      }
+      return [...resolved, ...segments.slice(index)];
+    }
+    return null;
+  }
+  function getRustModuleSegments(sourcePath, srcRoot) {
+    const normalizedSourcePath = normalizePath(sourcePath);
+    const normalizedSrcRoot = normalizePath(srcRoot);
+    if (!normalizedSourcePath.startsWith(`${normalizedSrcRoot}/`))
+      return null;
+    const relative = normalizedSourcePath.slice(normalizedSrcRoot.length + 1);
+    const fileName = baseName(relative);
+    if (fileName === "lib.rs" || fileName === "main.rs") {
+      return [];
+    }
+    if (fileName === "mod.rs") {
+      const folder = dirname(relative);
+      return folder ? folder.split("/").filter(Boolean) : [];
+    }
+    return stripExtension(relative).split("/").filter(Boolean);
+  }
+  function resolveQuotedIncludePath(request, filePathSet) {
+    const line = getLineContent(request);
+    if (!line.includes("#include"))
+      return null;
+    const match = getStringLiteralAtCursor(request);
+    if (!match || !match.value)
+      return null;
+    const candidates = [
+      normalizePath(joinPath(dirname(request.sourcePath), match.value)),
+      normalizePath(match.value)
+    ];
+    return findFirstExistingPath(candidates, filePathSet);
+  }
+  function getStringLiteralAtCursor(request) {
+    const line = getLineContent(request);
+    const quotePatterns = [
+      /"([^"\\]*(?:\\.[^"\\]*)*)"/g,
+      /'([^'\\]*(?:\\.[^'\\]*)*)'/g
+    ];
+    for (const pattern of quotePatterns) {
+      let match;
+      while ((match = pattern.exec(line)) != null) {
+        const startColumn = match.index + 1;
+        const endColumn = startColumn + match[0].length;
+        if (request.column >= startColumn && request.column <= endColumn) {
+          return {
+            value: match[1],
+            startColumn,
+            endColumn
+          };
+        }
+      }
+    }
+    return null;
+  }
+  function getLineContent(request) {
+    const lines = request.content.split(/\r?\n/);
+    return lines[request.lineNumber - 1] || "";
+  }
+  function getLineText(content, lineNumber) {
+    return content.split(/\r?\n/)[lineNumber - 1] || "";
+  }
+  function findFirstExistingPath(candidates, filePathSet) {
+    for (const candidate of candidates) {
+      const normalized = normalizePath(candidate);
+      if (filePathSet.has(normalized))
+        return normalized;
+    }
+    return null;
+  }
+  function normalizePath(path) {
+    const isAbsolute = path.startsWith("/");
+    const normalized = path.replace(/\\/g, "/");
+    const segments = normalized.split("/");
+    const resolved = [];
+    for (const segment of segments) {
+      if (!segment || segment === ".")
+        continue;
+      if (segment === "..") {
+        if (resolved.length > 0)
+          resolved.pop();
+        continue;
+      }
+      resolved.push(segment);
+    }
+    return `${isAbsolute ? "/" : ""}${resolved.join("/")}`.replace(/^\//, "");
+  }
+  function joinPath(...parts) {
+    return normalizePath(parts.filter(Boolean).join("/"));
+  }
+  function dirname(path) {
+    const normalized = normalizePath(path);
+    const index = normalized.lastIndexOf("/");
+    return index >= 0 ? normalized.slice(0, index) : "";
+  }
+  function baseName(path) {
+    const normalized = normalizePath(path);
+    const index = normalized.lastIndexOf("/");
+    return index >= 0 ? normalized.slice(index + 1) : normalized;
+  }
+  function stripExtension(path) {
+    const extension = getExtension(path);
+    return extension ? path.slice(0, -extension.length) : path;
+  }
+  function getExtension(path) {
+    const name = baseName(path);
+    const index = name.lastIndexOf(".");
+    return index >= 0 ? name.slice(index) : "";
+  }
+  function isReviewScope(value) {
+    return value === "git-diff" || value === "last-commit" || value === "all-files";
+  }
+  function isNavigationSide(value) {
+    return value === "original" || value === "modified";
   }
 
   // web/src/review-runtime.ts
@@ -938,6 +1886,10 @@ ${requestState.error}`;
         cancelButton,
         overallCommentButton,
         fileCommentButton,
+        navigateBackButton,
+        navigateForwardButton,
+        showReferencesButton,
+        peekDefinitionButton,
         toggleReviewedButton,
         toggleUnchangedButton,
         toggleWrapButton,
@@ -952,6 +1904,10 @@ ${requestState.error}`;
         onCancel,
         onShowOverallComment,
         onShowFileComment,
+        onNavigateBack,
+        onNavigateForward,
+        onShowReferences,
+        onPeekDefinition,
         onToggleReviewed,
         onToggleUnchanged,
         onToggleWrap,
@@ -980,6 +1936,10 @@ ${requestState.error}`;
       cancelButton.addEventListener("click", onCancel);
       overallCommentButton.addEventListener("click", onShowOverallComment);
       fileCommentButton.addEventListener("click", onShowFileComment);
+      navigateBackButton.addEventListener("click", onNavigateBack);
+      navigateForwardButton.addEventListener("click", onNavigateForward);
+      showReferencesButton.addEventListener("click", onShowReferences);
+      peekDefinitionButton.addEventListener("click", onPeekDefinition);
       toggleUnchangedButton.addEventListener("click", onToggleUnchanged);
       toggleWrapButton.addEventListener("click", onToggleWrap);
       toggleReviewedButton.addEventListener("click", onToggleReviewed);
@@ -1007,6 +1967,7 @@ ${requestState.error}`;
   // web/src/app.ts
   var reviewData = JSON.parse(document.getElementById("diff-review-data")?.textContent ?? "{}");
   var state = createInitialReviewState(reviewData);
+  var navigationResolver = createReviewNavigationResolver(reviewData);
   var {
     sidebarEl,
     sidebarTitleEl,
@@ -1020,6 +1981,7 @@ ${requestState.error}`;
     fileTreeEl,
     summaryEl,
     currentFileLabelEl,
+    currentSymbolLabelEl,
     modeHintEl,
     fileCommentsContainer,
     editorContainerEl,
@@ -1027,6 +1989,10 @@ ${requestState.error}`;
     cancelButton,
     overallCommentButton,
     fileCommentButton,
+    navigateBackButton,
+    navigateForwardButton,
+    showReferencesButton,
+    peekDefinitionButton,
     toggleReviewedButton,
     toggleUnchangedButton,
     toggleWrapButton
@@ -1037,6 +2003,11 @@ ${requestState.error}`;
   var sidebarController = null;
   var commentManager = null;
   var editorController = null;
+  var pendingFileWaiters = new Map;
+  var navigationBackStack = [];
+  var navigationForwardStack = [];
+  var isHistoryNavigation = false;
+  var currentNavigationRequestAvailable = false;
   function isFileReviewed(fileId) {
     return state.reviewedFiles[fileId] === true;
   }
@@ -1087,6 +2058,15 @@ ${requestState.error}`;
     const comparison = getScopeComparison(file, scope);
     return comparison?.displayPath || file?.path || "";
   }
+  function getScopeSidePath(file, scope, side) {
+    const comparison = getScopeComparison(file, scope);
+    if (!comparison)
+      return file?.path || "";
+    if (side === "original") {
+      return comparison.oldPath || comparison.newPath || file?.path || "";
+    }
+    return comparison.newPath || comparison.oldPath || file?.path || "";
+  }
   function getActiveStatus(file) {
     const comparison = getScopeComparison(file, state.currentScope);
     return comparison?.status ?? file?.worktreeStatus ?? null;
@@ -1113,6 +2093,34 @@ ${requestState.error}`;
       requestId: state.pendingRequestIds[key]
     };
   }
+  function resolvePendingFileWaiters(fileId, scope, value) {
+    const key = cacheKey(scope, fileId);
+    const waiters = pendingFileWaiters.get(key) ?? [];
+    pendingFileWaiters.delete(key);
+    waiters.forEach((waiter) => waiter.resolve(value));
+  }
+  function rejectPendingFileWaiters(fileId, scope, reason) {
+    const key = cacheKey(scope, fileId);
+    const waiters = pendingFileWaiters.get(key) ?? [];
+    pendingFileWaiters.delete(key);
+    waiters.forEach((waiter) => waiter.resolve(null));
+  }
+  function loadFileContents(fileId, scope) {
+    const requestState = getRequestState(fileId, scope);
+    if (requestState.contents) {
+      return Promise.resolve(requestState.contents);
+    }
+    if (requestState.error) {
+      return Promise.resolve(null);
+    }
+    ensureFileLoaded(fileId, scope);
+    return new Promise((resolve, reject) => {
+      const key = cacheKey(scope, fileId);
+      const waiters = pendingFileWaiters.get(key) ?? [];
+      waiters.push({ resolve, reject });
+      pendingFileWaiters.set(key, waiters);
+    });
+  }
   function ensureFileLoaded(fileId, scope = state.currentScope) {
     if (!fileId)
       return;
@@ -1130,15 +2138,211 @@ ${requestState.error}`;
       window.glimpse.send({ type: "request-file", requestId, fileId, scope });
     }
   }
+  function getCurrentNavigationTarget() {
+    return editorController?.getCurrentNavigationTarget() ?? null;
+  }
+  function sameNavigationTarget(left, right) {
+    if (!left || !right)
+      return false;
+    return left.fileId === right.fileId && left.scope === right.scope && left.side === right.side && left.line === right.line && left.column === right.column;
+  }
+  function updateNavigationButtons() {
+    navigateBackButton.disabled = navigationBackStack.length === 0;
+    navigateForwardButton.disabled = navigationForwardStack.length === 0;
+    showReferencesButton.disabled = !currentNavigationRequestAvailable;
+    peekDefinitionButton.disabled = !currentNavigationRequestAvailable;
+  }
+  function updateEditorContextUI(context) {
+    currentNavigationRequestAvailable = context.navigationTarget != null;
+    currentSymbolLabelEl.textContent = context.symbolTitle ? `Symbol: ${context.symbolTitle}${context.symbolLine ? ` · line ${context.symbolLine}` : ""}` : "";
+    updateNavigationButtons();
+  }
+  function recordNavigationCheckpoint() {
+    if (isHistoryNavigation)
+      return;
+    const current = getCurrentNavigationTarget();
+    if (!current)
+      return;
+    const previous = navigationBackStack[navigationBackStack.length - 1] ?? null;
+    if (!sameNavigationTarget(previous, current)) {
+      navigationBackStack.push(current);
+    }
+    navigationForwardStack = [];
+    updateNavigationButtons();
+  }
+  function describeNavigationTarget(target) {
+    const file = reviewData.files.find((item) => item.id === target.fileId) ?? null;
+    if (!file)
+      return "unknown target";
+    const path = getScopeDisplayPath(file, target.scope);
+    const sideLabel = target.scope === "all-files" ? "" : target.side === "original" ? " (old)" : " (new)";
+    const scopeText = target.scope === state.currentScope ? "" : ` in ${scopeLabel(target.scope)}`;
+    return `${path}${sideLabel}${scopeText}`;
+  }
+  function getCurrentNavigationRequest() {
+    return editorController?.getCurrentNavigationRequest() ?? null;
+  }
+  function getReferenceSearchTarget(file) {
+    if (state.currentScope === "git-diff" && file.inGitDiff) {
+      return {
+        scope: "git-diff",
+        side: file.gitDiff?.hasModified ? "modified" : "original"
+      };
+    }
+    if (state.currentScope === "last-commit" && file.inLastCommit) {
+      return {
+        scope: "last-commit",
+        side: file.lastCommit?.hasModified ? "modified" : "original"
+      };
+    }
+    return {
+      scope: "all-files",
+      side: "modified"
+    };
+  }
+  function sortReferenceTargets(left, right) {
+    const leftFile = reviewData.files.find((file) => file.id === left.fileId) ?? null;
+    const rightFile = reviewData.files.find((file) => file.id === right.fileId) ?? null;
+    const leftChanged = leftFile?.inGitDiff || leftFile?.inLastCommit ? 1 : 0;
+    const rightChanged = rightFile?.inGitDiff || rightFile?.inLastCommit ? 1 : 0;
+    if (leftChanged !== rightChanged)
+      return rightChanged - leftChanged;
+    const leftScopeMatch = left.scope === state.currentScope ? 1 : 0;
+    const rightScopeMatch = right.scope === state.currentScope ? 1 : 0;
+    if (leftScopeMatch !== rightScopeMatch)
+      return rightScopeMatch - leftScopeMatch;
+    return describeNavigationTarget(left).localeCompare(describeNavigationTarget(right));
+  }
+  async function handleShowReferences() {
+    const request = getCurrentNavigationRequest();
+    if (!request) {
+      showReferenceModal({
+        title: "References",
+        description: "Select a repo-local import or module path first.",
+        items: [],
+        emptyLabel: "No active navigation target is available at the current cursor."
+      });
+      return;
+    }
+    const target = navigationResolver.resolveTarget(request);
+    if (!target) {
+      showReferenceModal({
+        title: "References",
+        description: "This selection does not resolve to a repo-local review target.",
+        items: [],
+        emptyLabel: "No repo-local references available for the current selection."
+      });
+      return;
+    }
+    showReferencesButton.disabled = true;
+    const previousLabel = showReferencesButton.textContent || "References";
+    showReferencesButton.textContent = "Searching…";
+    try {
+      const searchableFiles = reviewData.files.filter((file) => file.hasWorkingTreeFile);
+      const loadedFiles = await Promise.all(searchableFiles.map(async (file) => ({
+        file,
+        contents: await loadFileContents(file.id, "all-files")
+      })));
+      const matches = navigationResolver.findReferences(request, loadedFiles.filter((item) => item.contents != null).map((item) => {
+        const target2 = getReferenceSearchTarget(item.file);
+        return {
+          fileId: item.file.id,
+          scope: target2.scope,
+          side: target2.side,
+          sourcePath: item.file.path,
+          languageId: inferLanguage(item.file.path),
+          content: item.contents?.modifiedContent || ""
+        };
+      })).sort((a, b) => sortReferenceTargets(a.target, b.target));
+      showReferenceModal({
+        title: `References for ${describeNavigationTarget(target)}`,
+        description: "Use the modal filters to focus on changed files or the current review scope.",
+        emptyLabel: "No repo-local references were found in the current workspace snapshot.",
+        items: matches.map((match) => {
+          const file = reviewData.files.find((item) => item.id === match.target.fileId);
+          return {
+            title: `${describeNavigationTarget(match.target)}:${match.lineNumber}`,
+            description: match.sourcePath,
+            preview: match.lineText.trim(),
+            isChanged: Boolean(file?.inGitDiff || file?.inLastCommit),
+            isCurrentScope: match.target.scope === state.currentScope,
+            onSelect: () => {
+              openNavigationTarget({
+                ...match.target,
+                line: match.lineNumber,
+                column: match.column
+              });
+            }
+          };
+        })
+      });
+    } finally {
+      showReferencesButton.disabled = false;
+      showReferencesButton.textContent = previousLabel;
+      updateNavigationButtons();
+    }
+  }
+  async function handlePeekDefinition() {
+    const request = getCurrentNavigationRequest();
+    if (!request)
+      return;
+    const target = navigationResolver.resolveTarget(request);
+    if (!target)
+      return;
+    peekDefinitionButton.disabled = true;
+    const previousLabel = peekDefinitionButton.textContent || "Peek";
+    peekDefinitionButton.textContent = "Loading…";
+    try {
+      const contents = await loadFileContents(target.fileId, target.scope);
+      if (!contents)
+        return;
+      const previewContent = target.side === "original" ? contents.originalContent : contents.modifiedContent;
+      showPeekModal({
+        title: `Peek ${describeNavigationTarget(target)}`,
+        description: "Preview the target in-place before jumping.",
+        code: buildPreviewSnippet(previewContent, target.line || 1),
+        onOpen: () => {
+          openNavigationTarget(target);
+        }
+      });
+    } finally {
+      peekDefinitionButton.disabled = false;
+      peekDefinitionButton.textContent = previousLabel;
+      updateNavigationButtons();
+    }
+  }
   function openFile(fileId) {
     if (state.activeFileId === fileId) {
       ensureFileLoaded(fileId, state.currentScope);
       return;
     }
+    recordNavigationCheckpoint();
     editorController?.saveCurrentScrollPosition();
     state.activeFileId = fileId;
     renderAll({ restoreFileScroll: true });
     ensureFileLoaded(fileId, state.currentScope);
+    updateNavigationButtons();
+  }
+  function openNavigationTarget(target) {
+    const targetFile = reviewData.files.find((file) => file.id === target.fileId);
+    if (!targetFile)
+      return;
+    const scopeChanged = state.currentScope !== target.scope;
+    const fileChanged = state.activeFileId !== target.fileId;
+    const current = getCurrentNavigationTarget();
+    if (!sameNavigationTarget(current, target)) {
+      recordNavigationCheckpoint();
+    }
+    if (scopeChanged || fileChanged) {
+      editorController?.saveCurrentScrollPosition();
+    }
+    state.currentScope = target.scope;
+    state.activeFileId = target.fileId;
+    ensureActiveFileForScope();
+    renderAll({ restoreFileScroll: false, preserveScroll: false });
+    ensureFileLoaded(targetFile.id, target.scope);
+    editorController?.revealNavigationTarget(target);
+    updateNavigationButtons();
   }
   sidebarController = createSidebarController({
     reviewDataFiles: reviewData.files,
@@ -1193,6 +2397,7 @@ ${requestState.error}`;
     activeFile,
     activeFileShowsDiff,
     getScopeFilePath,
+    getScopeSidePath,
     getScopeDisplayPath,
     getRequestState,
     ensureFileLoaded,
@@ -1201,10 +2406,15 @@ ${requestState.error}`;
     onCommentsChange: () => {
       updateCommentsUI();
     },
+    onEditorContextChange: updateEditorContextUI,
     renderFileComments: () => {
       commentManager?.renderFileComments();
     },
     canCommentOnSide,
+    resolveNavigationTarget: (request) => navigationResolver.resolveTarget(request),
+    describeNavigationTarget,
+    openNavigationTarget,
+    navigationResolver,
     editorContainerEl,
     currentFileLabelEl
   });
@@ -1279,6 +2489,7 @@ ${requestState.error}`;
   function renderAll(options = {}) {
     sidebarController?.renderTree();
     submitButton.disabled = false;
+    updateNavigationButtons();
     if (editorController) {
       mountFile(options);
       requestAnimationFrame(() => {
@@ -1302,12 +2513,14 @@ ${requestState.error}`;
     };
     if (!hasScopeFiles[scope] || state.currentScope === scope)
       return;
+    recordNavigationCheckpoint();
     editorController?.saveCurrentScrollPosition();
     state.currentScope = scope;
     renderAll({ restoreFileScroll: true });
     const file = activeFile();
     if (file)
       ensureFileLoaded(file.id, state.currentScope);
+    updateNavigationButtons();
   }
   function handleSubmitReview() {
     commentManager?.syncCommentBodiesFromDOM();
@@ -1353,6 +2566,42 @@ ${requestState.error}`;
       setTimeout(layoutEditor, 50);
     });
   }
+  function handleNavigateBack() {
+    const target = navigationBackStack.pop();
+    const current = getCurrentNavigationTarget();
+    if (!target || !current) {
+      updateNavigationButtons();
+      return;
+    }
+    if (!sameNavigationTarget(current, target)) {
+      navigationForwardStack.push(current);
+    }
+    isHistoryNavigation = true;
+    try {
+      openNavigationTarget(target);
+    } finally {
+      isHistoryNavigation = false;
+      updateNavigationButtons();
+    }
+  }
+  function handleNavigateForward() {
+    const target = navigationForwardStack.pop();
+    const current = getCurrentNavigationTarget();
+    if (!target || !current) {
+      updateNavigationButtons();
+      return;
+    }
+    if (!sameNavigationTarget(current, target)) {
+      navigationBackStack.push(current);
+    }
+    isHistoryNavigation = true;
+    try {
+      openNavigationTarget(target);
+    } finally {
+      isHistoryNavigation = false;
+      updateNavigationButtons();
+    }
+  }
   function handleHostFileData(message) {
     const key = cacheKey(message.scope, message.fileId);
     state.fileContents[key] = {
@@ -1361,6 +2610,7 @@ ${requestState.error}`;
     };
     delete state.fileErrors[key];
     delete state.pendingRequestIds[key];
+    resolvePendingFileWaiters(message.fileId, message.scope, state.fileContents[key]);
     sidebarController?.renderTree();
     if (state.activeFileId === message.fileId && state.currentScope === message.scope) {
       mountFile({ restoreFileScroll: true });
@@ -1370,6 +2620,7 @@ ${requestState.error}`;
     const key = cacheKey(message.scope, message.fileId);
     state.fileErrors[key] = message.message || "Unknown error";
     delete state.pendingRequestIds[key];
+    rejectPendingFileWaiters(message.fileId, message.scope, state.fileErrors[key]);
     sidebarController?.renderTree();
     if (state.activeFileId === message.fileId && state.currentScope === message.scope) {
       mountFile({ preserveScroll: false });
@@ -1381,6 +2632,10 @@ ${requestState.error}`;
       cancelButton,
       overallCommentButton,
       fileCommentButton,
+      navigateBackButton,
+      navigateForwardButton,
+      showReferencesButton,
+      peekDefinitionButton,
       toggleReviewedButton,
       toggleUnchangedButton,
       toggleWrapButton,
@@ -1395,6 +2650,14 @@ ${requestState.error}`;
       onCancel: handleCancelReview,
       onShowOverallComment: showOverallCommentModal,
       onShowFileComment: showFileCommentModal,
+      onNavigateBack: handleNavigateBack,
+      onNavigateForward: handleNavigateForward,
+      onShowReferences: () => {
+        handleShowReferences();
+      },
+      onPeekDefinition: () => {
+        handlePeekDefinition();
+      },
       onToggleReviewed: handleToggleReviewed,
       onToggleUnchanged: handleToggleUnchanged,
       onToggleWrap: handleToggleWrap,
@@ -1417,6 +2680,7 @@ ${requestState.error}`;
     }
   });
   runtimeController.bind();
+  updateNavigationButtons();
   ensureActiveFileForScope();
   sidebarController?.renderTree();
   commentManager?.renderFileComments();

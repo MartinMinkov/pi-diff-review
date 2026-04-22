@@ -11,6 +11,7 @@ export interface ReviewDomElements {
   fileTreeEl: HTMLDivElement;
   summaryEl: HTMLSpanElement;
   currentFileLabelEl: HTMLDivElement;
+  currentSymbolLabelEl: HTMLDivElement;
   modeHintEl: HTMLDivElement;
   fileCommentsContainer: HTMLDivElement;
   editorContainerEl: HTMLDivElement;
@@ -18,6 +19,10 @@ export interface ReviewDomElements {
   cancelButton: HTMLButtonElement;
   overallCommentButton: HTMLButtonElement;
   fileCommentButton: HTMLButtonElement;
+  navigateBackButton: HTMLButtonElement;
+  navigateForwardButton: HTMLButtonElement;
+  showReferencesButton: HTMLButtonElement;
+  peekDefinitionButton: HTMLButtonElement;
   toggleReviewedButton: HTMLButtonElement;
   toggleUnchangedButton: HTMLButtonElement;
   toggleWrapButton: HTMLButtonElement;
@@ -49,6 +54,9 @@ export function getReviewDomElements(): ReviewDomElements {
     currentFileLabelEl: document.getElementById(
       "current-file-label",
     ) as HTMLDivElement,
+    currentSymbolLabelEl: document.getElementById(
+      "current-symbol-label",
+    ) as HTMLDivElement,
     modeHintEl: document.getElementById("mode-hint") as HTMLDivElement,
     fileCommentsContainer: document.getElementById(
       "file-comments-container",
@@ -63,6 +71,18 @@ export function getReviewDomElements(): ReviewDomElements {
     ) as HTMLButtonElement,
     fileCommentButton: document.getElementById(
       "file-comment-button",
+    ) as HTMLButtonElement,
+    navigateBackButton: document.getElementById(
+      "navigate-back-button",
+    ) as HTMLButtonElement,
+    navigateForwardButton: document.getElementById(
+      "navigate-forward-button",
+    ) as HTMLButtonElement,
+    showReferencesButton: document.getElementById(
+      "show-references-button",
+    ) as HTMLButtonElement,
+    peekDefinitionButton: document.getElementById(
+      "peek-definition-button",
     ) as HTMLButtonElement,
     toggleReviewedButton: document.getElementById(
       "toggle-reviewed-button",
