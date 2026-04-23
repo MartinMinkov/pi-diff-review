@@ -174,6 +174,17 @@ export default function (pi: ExtensionAPI) {
     });
     activeWindow = window;
 
+    const closeReviewWindow = (): void => {
+      if (activeWindow === window) {
+        activeWindow = null;
+      }
+      try {
+        window.close();
+      } catch {
+        // Ignore close errors while tearing down the review window.
+      }
+    };
+
     const waitingUI = showWaitingUI(ctx);
     const fileMap = new Map(files.map((file) => [file.id, file]));
     const contentCache = new Map<string, Promise<ReviewFileContents>>();
@@ -325,12 +336,12 @@ export default function (pi: ExtensionAPI) {
               });
               setTimeout(() => {
                 settle(message);
-                closeActiveWindow();
+                closeReviewWindow();
               }, 40);
               return;
             }
             settle(message);
-            closeActiveWindow();
+            closeReviewWindow();
           }
         };
 
@@ -359,7 +370,7 @@ export default function (pi: ExtensionAPI) {
       ]);
 
       if (result.type === "ui" && result.reason === "escape") {
-        closeActiveWindow();
+        closeReviewWindow();
         await terminalMessagePromise.catch(() => null);
         ctx.ui.notify("Review cancelled.", "info");
         return;
@@ -371,7 +382,7 @@ export default function (pi: ExtensionAPI) {
           : await terminalMessagePromise;
 
       waitingUI.dismiss();
-      closeActiveWindow();
+      closeReviewWindow();
       await waitingUI.promise;
 
       if (message == null || message.type === "cancel") {
