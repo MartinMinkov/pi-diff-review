@@ -4,19 +4,49 @@ import {
   scopeLabel,
   statusBadgeClass,
   statusLabel,
-  getFileSearchPath,
-  getFileSearchScore,
 } from "../shared/lib/utils.js";
+import { supportsSemanticDefinition } from "../../shared/lib/navigation.js";
+import {
+  createComment,
+  getCommentKind,
+  getCommentKindLabel,
+  isCommentResolved,
+  sameNavigationTarget,
+  writeToClipboard,
+} from "./shared/review-helpers.js";
+import { createReviewFileModel } from "./models/review-file-model.js";
+import {
+  createReviewCodeSearchController,
+  type ReviewCodeSearchMatch,
+} from "./search/review-code-search.js";
+import {
+  createReviewCommandPaletteController,
+  type ReviewCommandPaletteController,
+} from "./commands/review-command-palette.js";
+import {
+  createReviewInspectorController,
+  type ReviewInspectorController,
+} from "./inspector/review-inspector.js";
 import { createSidebarController } from "../features/file-tree/sidebar.js";
 import type { ReviewSidebarController } from "../features/file-tree/sidebar.js";
 import {
   type ReviewFile,
   type ChangeStatus,
+  type DiffReviewComment,
+  type DiffReviewCommentKind,
+  type ReviewDefinitionDataMessage,
+  type ReviewDefinitionErrorMessage,
   type ReviewHostMessage,
   type ReviewFileContents,
   type ReviewFileDataMessage,
   type ReviewFileErrorMessage,
+  type ReviewNavigationRequest,
+  type ReviewNavigationSide,
+  type ReviewNavigationTarget,
+  type ReviewReferencesDataMessage,
+  type ReviewReferencesErrorMessage,
   type ReviewScope,
+  type ReviewSubmitAckMessage,
   type ReviewWindowData,
   type ReviewWindowMessage,
 } from "../shared/contracts/review.js";
@@ -25,10 +55,12 @@ import {
   type ReviewMountOptions,
   type ReviewState,
 } from "../shared/state/review-state.js";
-import { getReviewDomElements } from "./dom.js";
+import { getReviewDomElements } from "./ui/dom.js";
 import {
   showPeekModal,
   showReferenceModal,
+  showActionModal,
+  showSymbolModal,
   showTextModal as openTextModal,
 } from "../features/comments/modals.js";
 import { createCommentManager } from "../features/comments/comment-manager.js";
@@ -36,14 +68,16 @@ import type { ReviewCommentManager } from "../features/comments/comment-manager.
 import {
   createReviewEditor,
   type ReviewEditorController,
+  type ReviewEditorSelectionContext,
 } from "../features/editor/review-editor.js";
 import {
   createReviewNavigationResolver,
-  type ReviewNavigationSide,
-  type ReviewNavigationTarget,
 } from "../features/navigation/resolver.js";
-import { buildPreviewSnippet } from "../features/symbols/symbol-context.js";
-import { createReviewRuntimeController } from "./runtime.js";
+import {
+  buildPreviewSnippet,
+  extractReviewSymbols,
+} from "../features/symbols/symbol-context.js";
+import { createReviewRuntimeController } from "./runtime/controller.js";
 
 declare global {
   interface Window {
@@ -65,6 +99,10 @@ const {
   sidebarEl,
   sidebarTitleEl,
   sidebarSearchInputEl,
+  sidebarStatusFilterEl,
+  hideReviewedCheckboxEl,
+  commentedOnlyCheckboxEl,
+  changedOnlyCheckboxEl,
   toggleSidebarButton,
   scopeDiffButton,
   scopeLastCommitButton,
@@ -78,6 +116,10 @@ const {
   modeHintEl,
   fileCommentsContainer,
   editorContainerEl,
+  outlineContainerEl,
+  reviewQueueContainerEl,
+  changedSymbolsButton,
+  agentActionButton,
   submitButton,
   cancelButton,
   overallCommentButton,
@@ -98,114 +140,78 @@ let requestSequence = 0;
 let sidebarController: ReviewSidebarController | null = null;
 let commentManager: ReviewCommentManager | null = null;
 let editorController: ReviewEditorController | null = null;
-let pendingFileWaiters = new Map<
+const pendingFileWaiters = new Map<
   string,
   Array<{
     resolve: (value: ReviewFileContents | null) => void;
     reject: (reason?: unknown) => void;
   }>
 >();
-let navigationBackStack: ReviewNavigationTarget[] = [];
-let navigationForwardStack: ReviewNavigationTarget[] = [];
+const pendingDefinitionWaiters = new Map<
+  string,
+  Array<{
+    resolve: (value: ReviewNavigationTarget | null) => void;
+    reject: (reason?: unknown) => void;
+  }>
+>();
+const pendingReferencesWaiters = new Map<
+  string,
+  Array<{
+    resolve: (value: ReviewNavigationTarget[]) => void;
+    reject: (reason?: unknown) => void;
+  }>
+>();
+const navigationBackStack: ReviewNavigationTarget[] = [];
+const navigationForwardStack: ReviewNavigationTarget[] = [];
 let isHistoryNavigation = false;
 let currentNavigationRequestAvailable = false;
+let summaryFlashTimeout: number | null = null;
+let pendingSubmitRequestId: string | null = null;
+let inspectorController: ReviewInspectorController | null = null;
+let commandPaletteController: ReviewCommandPaletteController | null = null;
+const fileModel = createReviewFileModel({
+  reviewDataFiles: reviewData.files,
+  state,
+  isFileReviewed: (fileId) => state.reviewedFiles[fileId] === true,
+  isCommentResolved,
+});
 
 function isFileReviewed(fileId: string): boolean {
   return state.reviewedFiles[fileId] === true;
 }
 
-function getScopedFiles(): ReviewFile[] {
-  switch (state.currentScope) {
-    case "git-diff":
-      return reviewData.files.filter((file) => file.inGitDiff);
-    case "last-commit":
-      return reviewData.files.filter((file) => file.inLastCommit);
-    default:
-      return reviewData.files.filter((file) => file.hasWorkingTreeFile);
+function flashSummary(message: string): void {
+  if (summaryFlashTimeout != null) {
+    window.clearTimeout(summaryFlashTimeout);
   }
+  const previous = summaryEl.textContent || "";
+  summaryEl.textContent = message;
+  summaryFlashTimeout = window.setTimeout(() => {
+    summaryFlashTimeout = null;
+    sidebarController?.renderTree();
+    if (!summaryEl.textContent) {
+      summaryEl.textContent = previous;
+    }
+  }, 1800);
 }
 
-function ensureActiveFileForScope(): void {
-  const scopedFiles = getScopedFiles();
-  if (scopedFiles.length === 0) {
-    state.activeFileId = null;
-    return;
-  }
-  if (scopedFiles.some((file) => file.id === state.activeFileId)) {
-    return;
-  }
-  state.activeFileId = scopedFiles[0].id;
+function setSubmitPendingState(isPending: boolean): void {
+  submitButton.disabled = isPending;
+  cancelButton.disabled = isPending;
+  submitButton.textContent = isPending ? "Submitting…" : "Finish review";
 }
 
-function activeFile(): ReviewFile | null {
-  return (
-    reviewData.files.find((file) => file.id === state.activeFileId) ?? null
-  );
-}
-
-function getScopeComparison(
-  file: ReviewFile | null,
-  scope: ReviewScope = state.currentScope,
-): ReviewFile["gitDiff"] {
-  if (!file) return null;
-  if (scope === "git-diff") return file.gitDiff;
-  if (scope === "last-commit") return file.lastCommit;
-  return null;
-}
-
-function activeComparison(): ReviewFile["gitDiff"] {
-  return getScopeComparison(activeFile(), state.currentScope);
-}
-
-function activeFileShowsDiff(): boolean {
-  return activeComparison() != null;
-}
-
-function getScopeFilePath(file: ReviewFile | null): string {
-  const comparison = getScopeComparison(file, state.currentScope);
-  return comparison?.newPath || comparison?.oldPath || file?.path || "";
-}
-
-function getScopeDisplayPath(
-  file: ReviewFile | null,
-  scope: ReviewScope = state.currentScope,
-): string {
-  const comparison = getScopeComparison(file, scope);
-  return comparison?.displayPath || file?.path || "";
-}
-
-function getScopeSidePath(
-  file: ReviewFile | null,
-  scope: ReviewScope,
-  side: ReviewNavigationSide,
-): string {
-  const comparison = getScopeComparison(file, scope);
-  if (!comparison) return file?.path || "";
-  if (side === "original") {
-    return comparison.oldPath || comparison.newPath || file?.path || "";
-  }
-  return comparison.newPath || comparison.oldPath || file?.path || "";
-}
-
-function getActiveStatus(file: ReviewFile | null): ChangeStatus | null {
-  const comparison = getScopeComparison(file, state.currentScope);
-  return comparison?.status ?? file?.worktreeStatus ?? null;
-}
-
-function getFilteredFiles(): ReviewFile[] {
-  const scopedFiles = getScopedFiles();
-  const query = state.fileFilter.trim();
-  if (!query) return [...scopedFiles];
-
-  return scopedFiles
-    .map((file) => ({ file, score: getFileSearchScore(query, file) }))
-    .filter((entry) => entry.score >= 0)
-    .sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score;
-      return getFileSearchPath(a.file).localeCompare(getFileSearchPath(b.file));
-    })
-    .map((entry) => entry.file);
-}
+const getScopedFiles = fileModel.getScopedFiles;
+const ensureActiveFileForScope = fileModel.ensureActiveFileForScope;
+const activeFile = fileModel.activeFile;
+const getScopeComparison = fileModel.getScopeComparison;
+const activeComparison = fileModel.activeComparison;
+const activeFileShowsDiff = fileModel.activeFileShowsDiff;
+const getScopeFilePath = fileModel.getScopeFilePath;
+const getScopeDisplayPath = fileModel.getScopeDisplayPath;
+const getScopeSidePath = fileModel.getScopeSidePath;
+const getActiveStatus = fileModel.getActiveStatus;
+const getFilteredFiles = fileModel.getFilteredFiles;
 
 function cacheKey(scope: ReviewScope, fileId: string): string {
   return `${scope}:${fileId}`;
@@ -237,7 +243,6 @@ function resolvePendingFileWaiters(
 function rejectPendingFileWaiters(
   fileId: string,
   scope: ReviewScope,
-  reason: unknown,
 ): void {
   const key = cacheKey(scope, fileId);
   const waiters = pendingFileWaiters.get(key) ?? [];
@@ -285,22 +290,218 @@ function ensureFileLoaded(
   }
 }
 
+const codeSearchController = createReviewCodeSearchController({
+  scope: () => state.currentScope,
+  getScopedFiles,
+  getScopeComparison,
+  getScopeSidePath,
+  loadFileContents,
+  onStateChange: () => {
+    sidebarController?.renderTree();
+  },
+});
+
+function getCodeSearchState() {
+  return codeSearchController.getState();
+}
+
+function clearCodeSearch(): void {
+  codeSearchController.clear();
+}
+
+function scheduleCodeSearch(query: string): void {
+  codeSearchController.schedule(query);
+}
+
+function resolvePendingDefinitionWaiters(
+  requestId: string,
+  value: ReviewNavigationTarget | null,
+): void {
+  const waiters = pendingDefinitionWaiters.get(requestId) ?? [];
+  pendingDefinitionWaiters.delete(requestId);
+  waiters.forEach((waiter) => waiter.resolve(value));
+}
+
+function rejectPendingDefinitionWaiters(
+  requestId: string,
+  reason: unknown,
+): void {
+  const waiters = pendingDefinitionWaiters.get(requestId) ?? [];
+  pendingDefinitionWaiters.delete(requestId);
+  waiters.forEach((waiter) => waiter.reject(reason));
+}
+
+function requestDefinitionTarget(
+  request: ReviewNavigationRequest,
+): Promise<ReviewNavigationTarget | null> {
+  if (!window.glimpse?.send) {
+    return Promise.resolve(null);
+  }
+
+  const requestId = `definition:${Date.now()}:${++requestSequence}`;
+  const payload: ReviewWindowMessage = {
+    type: "request-definition",
+    requestId,
+    request,
+  };
+
+  window.glimpse.send(payload);
+
+  return new Promise((resolve, reject) => {
+    const waiters = pendingDefinitionWaiters.get(requestId) ?? [];
+    waiters.push({ resolve, reject });
+    pendingDefinitionWaiters.set(requestId, waiters);
+  });
+}
+
+function resolvePendingReferencesWaiters(
+  requestId: string,
+  value: ReviewNavigationTarget[],
+): void {
+  const waiters = pendingReferencesWaiters.get(requestId) ?? [];
+  pendingReferencesWaiters.delete(requestId);
+  waiters.forEach((waiter) => waiter.resolve(value));
+}
+
+function rejectPendingReferencesWaiters(
+  requestId: string,
+  reason: unknown,
+): void {
+  const waiters = pendingReferencesWaiters.get(requestId) ?? [];
+  pendingReferencesWaiters.delete(requestId);
+  waiters.forEach((waiter) => waiter.reject(reason));
+}
+
+function requestReferenceTargets(
+  request: ReviewNavigationRequest,
+): Promise<ReviewNavigationTarget[]> {
+  if (!window.glimpse?.send) {
+    return Promise.resolve([]);
+  }
+
+  const requestId = `references:${Date.now()}:${++requestSequence}`;
+  const payload: ReviewWindowMessage = {
+    type: "request-references",
+    requestId,
+    request,
+  };
+
+  window.glimpse.send(payload);
+
+  return new Promise((resolve, reject) => {
+    const waiters = pendingReferencesWaiters.get(requestId) ?? [];
+    waiters.push({ resolve, reject });
+    pendingReferencesWaiters.set(requestId, waiters);
+  });
+}
+
+async function resolveDefinitionTarget(
+  request: ReviewNavigationRequest,
+): Promise<ReviewNavigationTarget | null> {
+  const semanticTarget =
+    supportsSemanticDefinition(request.languageId)
+      ? await requestDefinitionTarget(request).catch(() => null)
+      : null;
+  return semanticTarget ?? navigationResolver.resolveTarget(request);
+}
+
 function getCurrentNavigationTarget(): ReviewNavigationTarget | null {
   return editorController?.getCurrentNavigationTarget() ?? null;
 }
 
-function sameNavigationTarget(
-  left: ReviewNavigationTarget | null,
-  right: ReviewNavigationTarget | null,
-): boolean {
-  if (!left || !right) return false;
-  return (
-    left.fileId === right.fileId &&
-    left.scope === right.scope &&
-    left.side === right.side &&
-    left.line === right.line &&
-    left.column === right.column
+function getCurrentSelectionContext(): ReviewEditorSelectionContext | null {
+  return editorController?.getCurrentSelectionContext() ?? null;
+}
+
+function getLoadedAnchorText(
+  fileId: string,
+  scope: ReviewScope,
+  side: "original" | "modified",
+  lineNumber: number,
+): string | null {
+  const key = cacheKey(scope, fileId);
+  const contents = state.fileContents[key];
+  if (!contents) return null;
+  const content =
+    side === "original" ? contents.originalContent : contents.modifiedContent;
+  return content.split(/\r?\n/)[lineNumber - 1]?.trim() ?? null;
+}
+
+function getLoadedCommentAnchorText(comment: DiffReviewComment): string | null {
+  if (comment.startLine == null || comment.side === "file") return null;
+  return getLoadedAnchorText(
+    comment.fileId,
+    comment.scope,
+    comment.side,
+    comment.startLine,
   );
+}
+
+function isCommentAnchorStale(comment: DiffReviewComment): boolean {
+  if (!comment.anchorText || comment.startLine == null || comment.side === "file") {
+    return false;
+  }
+  const currentLine = getLoadedCommentAnchorText(comment);
+  return currentLine != null && currentLine !== comment.anchorText.trim();
+}
+
+function getActiveLocationLabel(): string | null {
+  const file = activeFile();
+  const target = getCurrentNavigationTarget();
+  if (!file || !target) return null;
+
+  const path =
+    target.scope === "all-files"
+      ? file.path
+      : getScopeSidePath(file, target.scope, target.side) || file.path;
+  const sideSuffix =
+    target.scope === "all-files"
+      ? ""
+      : target.side === "original"
+        ? " (old)"
+        : " (new)";
+  return `${path}:${target.line}:${target.column}${sideSuffix}`;
+}
+
+function getSelectionReference(): string | null {
+  const selection = getCurrentSelectionContext();
+  const file = activeFile();
+  if (!selection || !file) return null;
+  const path =
+    selection.scope === "all-files"
+      ? file.path
+      : getScopeSidePath(file, selection.scope, selection.side) || file.path;
+  const range =
+    selection.startLine === selection.endLine
+      ? `${selection.startLine}`
+      : `${selection.startLine}-${selection.endLine}`;
+  const sideSuffix =
+    selection.scope === "all-files"
+      ? ""
+      : selection.side === "original"
+        ? " (old)"
+        : " (new)";
+  return `${path}:${range}${sideSuffix}`;
+}
+
+function navigateUnresolvedComment(direction: "next" | "previous"): void {
+  if (!inspectorController?.navigateUnresolvedComment(direction)) {
+    flashSummary("No unresolved comments in this scope");
+    return;
+  }
+  flashSummary(
+    direction === "next"
+      ? "Jumped to next unresolved comment"
+      : "Jumped to previous unresolved comment",
+  );
+}
+
+function renderReviewQueue(): void {
+  inspectorController?.renderReviewQueue();
+}
+
+async function renderOutline(): Promise<void> {
+  await inspectorController?.renderOutline();
 }
 
 function updateNavigationButtons(): void {
@@ -311,16 +512,17 @@ function updateNavigationButtons(): void {
 }
 
 function updateEditorContextUI(context: {
-  navigationRequest: unknown;
+  navigationRequest: ReviewNavigationRequest | null;
   navigationTarget: ReviewNavigationTarget | null;
   symbolTitle: string | null;
   symbolLine: number | null;
 }): void {
-  currentNavigationRequestAvailable = context.navigationTarget != null;
+  currentNavigationRequestAvailable = context.navigationRequest != null;
   currentSymbolLabelEl.textContent = context.symbolTitle
     ? `Symbol: ${context.symbolTitle}${context.symbolLine ? ` · line ${context.symbolLine}` : ""}`
     : "";
   updateNavigationButtons();
+  void renderOutline();
 }
 
 function recordNavigationCheckpoint(): void {
@@ -331,7 +533,7 @@ function recordNavigationCheckpoint(): void {
   if (!sameNavigationTarget(previous, current)) {
     navigationBackStack.push(current);
   }
-  navigationForwardStack = [];
+  navigationForwardStack.length = 0;
   updateNavigationButtons();
 }
 
@@ -406,7 +608,7 @@ async function handleShowReferences() {
   if (!request) {
     showReferenceModal({
       title: "References",
-      description: "Select a repo-local import or module path first.",
+      description: "Select a repo-local symbol, import, or module path first.",
       items: [],
       emptyLabel:
         "No active navigation target is available at the current cursor.",
@@ -414,15 +616,14 @@ async function handleShowReferences() {
     return;
   }
 
-  const target = navigationResolver.resolveTarget(request);
+  const target = await resolveDefinitionTarget(request);
   if (!target) {
     showReferenceModal({
       title: "References",
-      description:
-        "This selection does not resolve to a repo-local review target.",
+      description: "This selection does not resolve to a repo-local navigation target.",
       items: [],
       emptyLabel:
-        "No repo-local references available for the current selection.",
+        "No repo-local references are available for the current selection.",
     });
     return;
   }
@@ -432,34 +633,68 @@ async function handleShowReferences() {
   showReferencesButton.textContent = "Searching…";
 
   try {
-    const searchableFiles = reviewData.files.filter(
-      (file) => file.hasWorkingTreeFile,
-    );
-    const loadedFiles = await Promise.all(
-      searchableFiles.map(async (file) => ({
-        file,
-        contents: await loadFileContents(file.id, "all-files"),
-      })),
-    );
+    let matches:
+      | Array<{
+          target: ReviewNavigationTarget;
+          lineNumber: number;
+          column: number;
+          sourcePath: string;
+          lineText: string;
+        }>
+      | [];
 
-    const matches = navigationResolver
-      .findReferences(
-        request,
-        loadedFiles
-          .filter((item) => item.contents != null)
-          .map((item) => {
-            const target = getReferenceSearchTarget(item.file);
-            return {
-              fileId: item.file.id,
-              scope: target.scope,
-              side: target.side,
-              sourcePath: item.file.path,
-              languageId: inferLanguage(item.file.path),
-              content: item.contents?.modifiedContent || "",
-            };
-          }),
-      )
-      .sort((a, b) => sortReferenceTargets(a.target, b.target));
+    if (supportsSemanticDefinition(request.languageId)) {
+      const semanticTargets =
+        (await requestReferenceTargets(request).catch(() => [])) ?? [];
+      const semanticItems = await Promise.all(
+        semanticTargets.map(async (target) => {
+          const file = reviewData.files.find((item) => item.id === target.fileId);
+          const contents = await loadFileContents(target.fileId, target.scope);
+          const content =
+            target.side === "original"
+              ? contents?.originalContent ?? ""
+              : contents?.modifiedContent ?? "";
+          const lineText = content.split(/\r?\n/)[target.line - 1] ?? "";
+          return {
+            target,
+            lineNumber: target.line,
+            column: target.column,
+            sourcePath: getScopeDisplayPath(file ?? null, target.scope),
+            lineText,
+          };
+        }),
+      );
+      matches = semanticItems.sort((a, b) => sortReferenceTargets(a.target, b.target));
+    } else {
+      const searchableFiles = reviewData.files.filter(
+        (file) => file.hasWorkingTreeFile,
+      );
+      const loadedFiles = await Promise.all(
+        searchableFiles.map(async (file) => ({
+          file,
+          contents: await loadFileContents(file.id, "all-files"),
+        })),
+      );
+
+      matches = navigationResolver
+        .findReferences(
+          request,
+          loadedFiles
+            .filter((item) => item.contents != null)
+            .map((item) => {
+              const target = getReferenceSearchTarget(item.file);
+              return {
+                fileId: item.file.id,
+                scope: target.scope,
+                side: target.side,
+                sourcePath: item.file.path,
+                languageId: inferLanguage(item.file.path),
+                content: item.contents?.modifiedContent || "",
+              };
+            }),
+        )
+        .sort((a, b) => sortReferenceTargets(a.target, b.target));
+    }
 
     showReferenceModal({
       title: `References for ${describeNavigationTarget(target)}`,
@@ -497,7 +732,7 @@ async function handleShowReferences() {
 async function handlePeekDefinition() {
   const request = getCurrentNavigationRequest();
   if (!request) return;
-  const target = navigationResolver.resolveTarget(request);
+  const target = await resolveDefinitionTarget(request);
   if (!target) return;
 
   peekDefinitionButton.disabled = true;
@@ -564,6 +799,10 @@ function openNavigationTarget(target: ReviewNavigationTarget): void {
   updateNavigationButtons();
 }
 
+function openCodeSearchMatch(match: ReviewCodeSearchMatch): void {
+  openNavigationTarget(match.target);
+}
+
 sidebarController = createSidebarController({
   reviewDataFiles: reviewData.files,
   state,
@@ -572,6 +811,10 @@ sidebarController = createSidebarController({
   fileTreeEl,
   summaryEl,
   modeHintEl,
+  sidebarStatusFilterEl,
+  hideReviewedCheckboxEl,
+  commentedOnlyCheckboxEl,
+  changedOnlyCheckboxEl,
   submitButton,
   toggleReviewedButton,
   toggleUnchangedButton,
@@ -588,9 +831,11 @@ sidebarController = createSidebarController({
   getFilteredFiles,
   getRequestState,
   isFileReviewed,
+  getCodeSearchState,
   getActiveStatus,
   activeFile,
   openFile,
+  openCodeSearchMatch,
   ensureActiveFileForScope,
   activeFileShowsDiff,
 });
@@ -608,8 +853,7 @@ function addInlineComment(
   side: "original" | "modified",
   line: number,
 ): void {
-  state.comments.push({
-    id: `${Date.now()}:${Math.random().toString(16).slice(2)}`,
+  state.comments.push(createComment({
     fileId,
     scope: state.currentScope,
     side,
@@ -618,7 +862,9 @@ function addInlineComment(
     body: "",
     status: "draft",
     collapsed: false,
-  });
+    anchorPath: getScopeSidePath(activeFile(), state.currentScope, side),
+    anchorText: getLoadedAnchorText(fileId, state.currentScope, side, line) ?? undefined,
+  }));
 }
 
 editorController = createReviewEditor({
@@ -644,6 +890,7 @@ editorController = createReviewEditor({
   canCommentOnSide,
   resolveNavigationTarget: (request) =>
     navigationResolver.resolveTarget(request),
+  resolveDefinitionTarget,
   describeNavigationTarget,
   openNavigationTarget,
   navigationResolver,
@@ -675,8 +922,7 @@ function showFileCommentModal() {
     saveLabel: "Add comment",
     onSave: (value) => {
       if (!value) return;
-      state.comments.push({
-        id: `${Date.now()}:${Math.random().toString(16).slice(2)}`,
+      state.comments.push(createComment({
         fileId: file.id,
         scope: state.currentScope,
         side: "file",
@@ -685,11 +931,223 @@ function showFileCommentModal() {
         body: value,
         status: "submitted",
         collapsed: false,
-      });
+        anchorPath: getScopeDisplayPath(file, state.currentScope),
+      }));
       submitButton.disabled = false;
       updateCommentsUI();
     },
   });
+}
+
+async function handleShowChangedSymbols() {
+  changedSymbolsButton.disabled = true;
+  const previousLabel = changedSymbolsButton.textContent || "Changed symbols";
+  changedSymbolsButton.textContent = "Loading…";
+
+  try {
+    const changedFiles = reviewData.files.filter(
+      (file) => file.inGitDiff || file.inLastCommit || file.worktreeStatus != null,
+    );
+    const items = (
+      await Promise.all(
+        changedFiles.map(async (file) => {
+          const contents = await loadFileContents(file.id, "all-files");
+          const content = contents?.modifiedContent ?? contents?.originalContent ?? "";
+          const languageId = inferLanguage(file.path);
+          return extractReviewSymbols(content, languageId).map((symbol) => ({
+            file,
+            symbol,
+          }));
+        }),
+      )
+    )
+      .flat()
+      .sort((left, right) => {
+        if (left.file.path !== right.file.path) {
+          return left.file.path.localeCompare(right.file.path);
+        }
+        return left.symbol.lineNumber - right.symbol.lineNumber;
+      });
+
+    showSymbolModal({
+      title: "Changed symbols",
+      description:
+        "Jump to the meaningful parts of the current local change set.",
+      items: items.map(({ file, symbol }) => ({
+        title: symbol.title,
+        kind: symbol.kind,
+        description: `${file.path} · line ${symbol.lineNumber}`,
+        onSelect: () => {
+          openNavigationTarget({
+            fileId: file.id,
+            scope: file.inGitDiff
+              ? "git-diff"
+              : file.inLastCommit
+                ? "last-commit"
+                : "all-files",
+            side:
+              file.gitDiff?.hasModified || file.lastCommit?.hasModified || file.hasWorkingTreeFile
+                ? "modified"
+                : "original",
+            line: symbol.lineNumber,
+            column: 1,
+          });
+        },
+      })),
+    });
+  } finally {
+    changedSymbolsButton.disabled = false;
+    changedSymbolsButton.textContent = previousLabel;
+  }
+}
+
+function buildAgentActionComment(
+  kind: DiffReviewCommentKind,
+  body: string,
+  selection: ReviewEditorSelectionContext | null,
+  useSelection: boolean,
+): void {
+  const file = activeFile();
+  if (!file) return;
+
+  state.comments.push(
+    createComment({
+      fileId: file.id,
+      scope: state.currentScope,
+      side: useSelection ? selection?.side ?? "modified" : "file",
+      startLine: useSelection ? selection?.startLine ?? null : null,
+      endLine: useSelection ? selection?.endLine ?? null : null,
+      body,
+      status: "submitted",
+      collapsed: false,
+      kind,
+      anchorPath: getScopeDisplayPath(file, state.currentScope),
+      anchorText: useSelection
+        ? selection?.selectedText.trim().split(/\r?\n/)[0]
+        : undefined,
+    }),
+  );
+  updateCommentsUI();
+}
+
+function handleAgentAction() {
+  const selection = getCurrentSelectionContext();
+  const hasSelection = Boolean(selection?.selectedText.trim());
+  const contextDescription = hasSelection
+    ? `Selected lines ${selection?.startLine}-${selection?.endLine}`
+    : activeFile()
+      ? `Current file ${getScopeDisplayPath(activeFile(), state.currentScope)}`
+      : "Current review context";
+
+  showActionModal({
+    title: "Ask agent about this review context",
+    description: `${contextDescription}. These prompts will be added to the review queue and included in the final handoff.`,
+    actions: [
+      {
+        label: "Explain this code",
+        description: "Ask for a plain-language walkthrough of the selected code or current file context.",
+        onSelect: () => {
+          buildAgentActionComment(
+            "explain",
+            hasSelection
+              ? "Explain what this selected code does, which surrounding state or control flow it depends on, and any non-obvious details I should understand before approving it."
+              : "Explain the current file changes in plain language, focusing on the intent and any non-obvious tradeoffs.",
+            selection,
+            hasSelection,
+          );
+        },
+      },
+      {
+        label: "Explain this change",
+        description: "Ask why this change exists and how it fits the broader diff.",
+        onSelect: () => {
+          buildAgentActionComment(
+            "question",
+            hasSelection
+              ? "Explain what changed in this selected code and why this approach was chosen over the most obvious alternatives."
+              : "Summarize what changed in this file and why these edits matter to the overall change set.",
+            selection,
+            hasSelection,
+          );
+        },
+      },
+      {
+        label: "Risk-check",
+        description: "Ask for regressions, edge cases, and failure modes worth reviewing.",
+        onSelect: () => {
+          buildAgentActionComment(
+            "risk",
+            "Review this context for regressions, edge cases, and correctness risks. Call out the most important things I should double-check in the diff.",
+            selection,
+            hasSelection,
+          );
+        },
+      },
+      {
+        label: "Test ideas",
+        description: "Ask which tests matter most before accepting the change.",
+        onSelect: () => {
+          buildAgentActionComment(
+            "tests",
+            "Suggest the most important tests to run or add for this context, and explain what each test would protect against.",
+            selection,
+            hasSelection,
+          );
+        },
+      },
+    ],
+  });
+}
+
+inspectorController = createReviewInspectorController({
+  reviewDataFiles: reviewData.files,
+  state,
+  outlineContainerEl,
+  reviewQueueContainerEl,
+  activeFile,
+  getCurrentNavigationTarget,
+  getScopeComparison,
+  getScopeFilePath,
+  getScopeDisplayPath,
+  loadFileContents,
+  openNavigationTarget,
+  onCommentsChange: updateCommentsUI,
+  getCommentKind: (comment) => getCommentKind(comment),
+  getCommentKindLabel,
+  isCommentResolved,
+  isCommentAnchorStale,
+});
+
+commandPaletteController = createReviewCommandPaletteController({
+  state,
+  currentSymbolLabelEl,
+  sidebarSearchInputEl,
+  getScopedFiles,
+  activeFile,
+  getScopeDisplayPath,
+  getActiveStatus,
+  statusLabel,
+  scopeLabel,
+  getCurrentSelectionContext,
+  getCurrentNavigationTarget,
+  getActiveLocationLabel,
+  getSelectionReference,
+  loadFileContents,
+  describeNavigationTarget,
+  writeToClipboard,
+  flashSummary,
+  openFile,
+  handleShowChangedSymbols,
+  handleAgentAction,
+  navigateUnresolvedComment,
+});
+
+function openQuickOpenFiles(): void {
+  commandPaletteController?.openQuickOpenFiles();
+}
+
+function openCommandPalette(): void {
+  commandPaletteController?.openCommandPalette();
 }
 
 function layoutEditor() {
@@ -703,10 +1161,6 @@ function canCommentOnSide(file, side) {
     return comparison != null && comparison.hasOriginal;
   }
   return comparison != null ? comparison.hasModified : file.hasWorkingTreeFile;
-}
-
-function isActiveFileReady() {
-  return editorController?.isActiveFileReady() ?? false;
 }
 
 function syncViewZones() {
@@ -726,6 +1180,7 @@ function updateCommentsUI() {
   syncViewZones();
   updateDecorations();
   commentManager?.renderFileComments();
+  renderReviewQueue();
 }
 
 function applyEditorOptions() {
@@ -736,6 +1191,8 @@ function renderAll(options: ReviewMountOptions = {}): void {
   sidebarController?.renderTree();
   submitButton.disabled = false;
   updateNavigationButtons();
+  renderReviewQueue();
+  void renderOutline();
   if (editorController) {
     mountFile(options);
     requestAnimationFrame(() => {
@@ -764,25 +1221,40 @@ function switchScope(scope: ReviewScope) {
   editorController?.saveCurrentScrollPosition();
   state.currentScope = scope;
   renderAll({ restoreFileScroll: true });
+  scheduleCodeSearch(state.fileFilter);
   const file = activeFile();
   if (file) ensureFileLoaded(file.id, state.currentScope);
   updateNavigationButtons();
 }
 
 function handleSubmitReview() {
+  if (pendingSubmitRequestId) {
+    return;
+  }
   commentManager?.syncCommentBodiesFromDOM();
+  const requestId = `submit:${Date.now()}:${++requestSequence}`;
   const payload: ReviewWindowMessage = {
     type: "submit",
+    requestId,
     overallComment: state.overallComment.trim(),
     comments: state.comments
-      .map((comment) => ({ ...comment, body: comment.body.trim() }))
+      .map((comment) => ({
+        ...comment,
+        body: comment.body.trim(),
+        kind: getCommentKind(comment),
+        resolved: isCommentResolved(comment),
+      }))
       .filter(
         (comment) =>
-          comment.status === "submitted" && comment.body.length > 0,
+          comment.status === "submitted" &&
+          comment.body.length > 0 &&
+          comment.resolved !== true,
       ),
   };
+  pendingSubmitRequestId = requestId;
+  setSubmitPendingState(true);
   window.glimpse.send(payload);
-  window.glimpse.close();
+  flashSummary("Submitting review feedback…");
 }
 
 function handleCancelReview() {
@@ -894,7 +1366,6 @@ function handleHostFileError(message: ReviewFileErrorMessage) {
   rejectPendingFileWaiters(
     message.fileId,
     message.scope,
-    state.fileErrors[key],
   );
   sidebarController?.renderTree();
   if (
@@ -903,6 +1374,35 @@ function handleHostFileError(message: ReviewFileErrorMessage) {
   ) {
     mountFile({ preserveScroll: false });
   }
+}
+
+function handleHostDefinitionData(message: ReviewDefinitionDataMessage) {
+  resolvePendingDefinitionWaiters(message.requestId, message.target);
+}
+
+function handleHostDefinitionError(message: ReviewDefinitionErrorMessage) {
+  rejectPendingDefinitionWaiters(
+    message.requestId,
+    new Error(message.message || "Unknown navigation error"),
+  );
+}
+
+function handleHostReferencesData(message: ReviewReferencesDataMessage) {
+  resolvePendingReferencesWaiters(message.requestId, message.targets ?? []);
+}
+
+function handleHostReferencesError(message: ReviewReferencesErrorMessage) {
+  rejectPendingReferencesWaiters(
+    message.requestId,
+    new Error(message.message || "Unknown references error"),
+  );
+}
+
+function handleHostSubmitAck(message: ReviewSubmitAckMessage) {
+  if (message.requestId !== pendingSubmitRequestId) return;
+  flashSummary(
+    `Review received by host${message.commentCount > 0 ? ` (${message.commentCount} comment${message.commentCount === 1 ? "" : "s"})` : ""}. Closing…`,
+  );
 }
 
 const runtimeController = createReviewRuntimeController({
@@ -923,6 +1423,12 @@ const runtimeController = createReviewRuntimeController({
     scopeLastCommitButton,
     scopeAllButton,
     sidebarSearchInputEl,
+    sidebarStatusFilterEl,
+    hideReviewedCheckboxEl,
+    commentedOnlyCheckboxEl,
+    changedOnlyCheckboxEl,
+    changedSymbolsButton,
+    agentActionButton,
   },
   events: {
     onSubmit: handleSubmitReview,
@@ -946,17 +1452,90 @@ const runtimeController = createReviewRuntimeController({
     onScopeAll: () => switchScope("all-files"),
     onSidebarSearchInput: (value) => {
       state.fileFilter = value;
+      scheduleCodeSearch(value);
       sidebarController?.renderTree();
     },
     onSidebarSearchClear: () => {
       state.fileFilter = "";
+      clearCodeSearch();
       sidebarController?.renderTree();
     },
+    onStatusFilterChange: (value) => {
+      state.statusFilter = (value as ChangeStatus | "all") ?? "all";
+      sidebarController?.renderTree();
+    },
+    onHideReviewedChange: (checked) => {
+      state.hideReviewedFiles = checked;
+      sidebarController?.renderTree();
+    },
+    onCommentedOnlyChange: (checked) => {
+      state.showCommentedFilesOnly = checked;
+      sidebarController?.renderTree();
+    },
+    onChangedOnlyChange: (checked) => {
+      state.showChangedFilesOnly = checked;
+      sidebarController?.renderTree();
+    },
+    onShowChangedSymbols: () => {
+      void handleShowChangedSymbols();
+    },
+    onAgentAction: handleAgentAction,
   },
   messages: {
     onFileData: handleHostFileData,
     onFileError: handleHostFileError,
+    onDefinitionData: handleHostDefinitionData,
+    onDefinitionError: handleHostDefinitionError,
+    onReferencesData: handleHostReferencesData,
+    onReferencesError: handleHostReferencesError,
+    onSubmitAck: handleHostSubmitAck,
   },
+});
+
+window.addEventListener("keydown", (event) => {
+  if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === "p") {
+    event.preventDefault();
+    openCommandPalette();
+    return;
+  }
+
+  if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === "p") {
+    event.preventDefault();
+    openQuickOpenFiles();
+    return;
+  }
+
+  if (event.defaultPrevented) return;
+  const target = event.target as HTMLElement | null;
+  const isTypingTarget =
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target?.isContentEditable === true;
+  if (isTypingTarget) return;
+
+  if (event.key === "f" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+    event.preventDefault();
+    sidebarSearchInputEl.focus();
+    sidebarSearchInputEl.select();
+    return;
+  }
+
+  if (event.key === "s" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+    event.preventDefault();
+    void handleShowChangedSymbols();
+    return;
+  }
+
+  if (event.key.toLowerCase() === "n" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+    event.preventDefault();
+    navigateUnresolvedComment(event.shiftKey ? "previous" : "next");
+    return;
+  }
+
+  if (event.key === "e" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+    event.preventDefault();
+    handleAgentAction();
+  }
 });
 
 runtimeController.bind();
@@ -965,5 +1544,7 @@ updateNavigationButtons();
 ensureActiveFileForScope();
 sidebarController?.renderTree();
 commentManager?.renderFileComments();
+renderReviewQueue();
+void renderOutline();
 sidebarController?.updateSidebarLayout();
 setupMonaco();

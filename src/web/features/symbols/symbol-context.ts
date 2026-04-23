@@ -3,6 +3,12 @@ export interface ReviewSymbolContext {
   lineNumber: number | null;
 }
 
+export interface ReviewSymbolItem {
+  title: string;
+  lineNumber: number;
+  kind: "function" | "type" | "module" | "member" | "value";
+}
+
 export function getReviewSymbolContext(
   content: string,
   lineNumber: number,
@@ -13,9 +19,9 @@ export function getReviewSymbolContext(
 
   for (let index = maxIndex; index >= 0; index -= 1) {
     const line = lines[index] || "";
-    const title = matchSymbolLine(line, languageId);
-    if (title) {
-      return { title, lineNumber: index + 1 };
+    const symbol = matchSymbolLine(line, languageId);
+    if (symbol) {
+      return { title: symbol.title, lineNumber: index + 1 };
     }
   }
 
@@ -44,7 +50,33 @@ export function buildPreviewSnippet(
     .join("\n");
 }
 
-function matchSymbolLine(line: string, languageId: string): string | null {
+export function extractReviewSymbols(
+  content: string,
+  languageId: string,
+): ReviewSymbolItem[] {
+  const items: ReviewSymbolItem[] = [];
+  const seen = new Set<string>();
+
+  content.split(/\r?\n/).forEach((line, index) => {
+    const symbol = matchSymbolLine(line, languageId);
+    if (!symbol) return;
+    const key = `${symbol.kind}:${symbol.title}:${index + 1}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    items.push({
+      title: symbol.title,
+      lineNumber: index + 1,
+      kind: symbol.kind,
+    });
+  });
+
+  return items;
+}
+
+function matchSymbolLine(
+  line: string,
+  languageId: string,
+): ReviewSymbolItem | null {
   const trimmed = line.trim();
   if (!trimmed) return null;
 
@@ -52,46 +84,71 @@ function matchSymbolLine(line: string, languageId: string): string | null {
     case "typescript":
     case "javascript":
       return (
-        capture(
+        captureSymbol(
           trimmed,
           /^(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/,
+          "function",
         ) ||
-        capture(trimmed, /^(?:export\s+)?class\s+([A-Za-z_$][\w$]*)/) ||
-        capture(trimmed, /^(?:export\s+)?interface\s+([A-Za-z_$][\w$]*)/) ||
-        capture(trimmed, /^(?:export\s+)?type\s+([A-Za-z_$][\w$]*)/) ||
-        capture(
+        captureSymbol(
+          trimmed,
+          /^(?:export\s+)?class\s+([A-Za-z_$][\w$]*)/,
+          "type",
+        ) ||
+        captureSymbol(
+          trimmed,
+          /^(?:export\s+)?interface\s+([A-Za-z_$][\w$]*)/,
+          "type",
+        ) ||
+        captureSymbol(
+          trimmed,
+          /^(?:export\s+)?type\s+([A-Za-z_$][\w$]*)/,
+          "type",
+        ) ||
+        captureSymbol(
           trimmed,
           /^(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?\(/,
+          "function",
         ) ||
-        capture(
+        captureSymbol(
           trimmed,
           /^(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?[A-Za-z_$][\w$]*\s*=>/,
+          "function",
         ) ||
-        capture(trimmed, /^([A-Za-z_$][\w$]*)\s*\(/)
+        captureSymbol(trimmed, /^([A-Za-z_$][\w$]*)\s*\(/, "member")
       );
     case "go":
       return (
-        capture(trimmed, /^func\s+(?:\([^)]*\)\s*)?([A-Za-z_][\w]*)/) ||
-        capture(trimmed, /^type\s+([A-Za-z_][\w]*)\s+(?:struct|interface)/) ||
-        capture(trimmed, /^var\s+([A-Za-z_][\w]*)/) ||
-        capture(trimmed, /^const\s+([A-Za-z_][\w]*)/)
+        captureSymbol(
+          trimmed,
+          /^func\s+(?:\([^)]*\)\s*)?([A-Za-z_][\w]*)/,
+          "function",
+        ) ||
+        captureSymbol(
+          trimmed,
+          /^type\s+([A-Za-z_][\w]*)\s+(?:struct|interface)/,
+          "type",
+        ) ||
+        captureSymbol(trimmed, /^var\s+([A-Za-z_][\w]*)/, "value") ||
+        captureSymbol(trimmed, /^const\s+([A-Za-z_][\w]*)/, "value")
       );
     case "rust":
       return (
-        capture(trimmed, /^(?:pub\s+)?fn\s+([A-Za-z_][\w]*)/) ||
-        capture(trimmed, /^impl\s+([A-Za-z_][\w]*)/) ||
-        capture(
+        captureSymbol(trimmed, /^(?:pub\s+)?fn\s+([A-Za-z_][\w]*)/, "function") ||
+        captureSymbol(trimmed, /^impl\s+([A-Za-z_][\w]*)/, "type") ||
+        captureSymbol(
           trimmed,
           /^(?:pub\s+)?(?:struct|enum|trait|mod)\s+([A-Za-z_][\w]*)/,
+          trimmed.includes("mod ") ? "module" : "type",
         )
       );
     case "c":
     case "cpp":
       return (
-        capture(trimmed, /^(?:class|struct|enum)\s+([A-Za-z_][\w]*)/) ||
-        capture(
+        captureSymbol(trimmed, /^(?:class|struct|enum)\s+([A-Za-z_][\w]*)/, "type") ||
+        captureSymbol(
           trimmed,
           /^(?:static\s+)?(?:inline\s+)?[A-Za-z_][\w:\s*&<>]*\s+([A-Za-z_][\w]*)\s*\([^;]*\)\s*(?:\{|$)/,
+          "function",
         )
       );
     default:
@@ -99,7 +156,17 @@ function matchSymbolLine(line: string, languageId: string): string | null {
   }
 }
 
-function capture(value: string, pattern: RegExp): string | null {
+function captureSymbol(
+  value: string,
+  pattern: RegExp,
+  kind: ReviewSymbolItem["kind"],
+): ReviewSymbolItem | null {
   const match = value.match(pattern);
-  return match?.[1] || null;
+  return match?.[1]
+    ? {
+        title: match[1],
+        lineNumber: 0,
+        kind,
+      }
+    : null;
 }

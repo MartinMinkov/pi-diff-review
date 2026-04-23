@@ -27,8 +27,35 @@ export interface ReviewFileContents {
   modifiedContent: string;
 }
 
+export type ReviewNavigationSide = "original" | "modified";
+
+export interface ReviewNavigationRequest {
+  fileId: string;
+  scope: ReviewScope;
+  side: ReviewNavigationSide;
+  sourcePath: string;
+  languageId: string;
+  content: string;
+  lineNumber: number;
+  column: number;
+}
+
+export interface ReviewNavigationTarget {
+  fileId: string;
+  scope: ReviewScope;
+  side: ReviewNavigationSide;
+  line: number;
+  column: number;
+}
+
 export type CommentSide = "original" | "modified" | "file";
 export type DiffReviewCommentStatus = "draft" | "submitted";
+export type DiffReviewCommentKind =
+  | "feedback"
+  | "question"
+  | "risk"
+  | "explain"
+  | "tests";
 
 export interface DiffReviewComment {
   id: string;
@@ -40,10 +67,15 @@ export interface DiffReviewComment {
   body: string;
   status: DiffReviewCommentStatus;
   collapsed: boolean;
+  kind?: DiffReviewCommentKind;
+  resolved?: boolean;
+  anchorPath?: string;
+  anchorText?: string;
 }
 
 export interface ReviewSubmitPayload {
   type: "submit";
+  requestId: string;
   overallComment: string;
   comments: DiffReviewComment[];
 }
@@ -59,10 +91,24 @@ export interface ReviewRequestFilePayload {
   scope: ReviewScope;
 }
 
+export interface ReviewRequestDefinitionPayload {
+  type: "request-definition";
+  requestId: string;
+  request: ReviewNavigationRequest;
+}
+
+export interface ReviewRequestReferencesPayload {
+  type: "request-references";
+  requestId: string;
+  request: ReviewNavigationRequest;
+}
+
 export type ReviewWindowMessage =
   | ReviewSubmitPayload
   | ReviewCancelPayload
-  | ReviewRequestFilePayload;
+  | ReviewRequestFilePayload
+  | ReviewRequestDefinitionPayload
+  | ReviewRequestReferencesPayload;
 
 export interface ReviewFileDataMessage {
   type: "file-data";
@@ -81,7 +127,45 @@ export interface ReviewFileErrorMessage {
   message: string;
 }
 
-export type ReviewHostMessage = ReviewFileDataMessage | ReviewFileErrorMessage;
+export interface ReviewDefinitionDataMessage {
+  type: "definition-data";
+  requestId: string;
+  target: ReviewNavigationTarget | null;
+}
+
+export interface ReviewDefinitionErrorMessage {
+  type: "definition-error";
+  requestId: string;
+  message: string;
+}
+
+export interface ReviewReferencesDataMessage {
+  type: "references-data";
+  requestId: string;
+  targets: ReviewNavigationTarget[];
+}
+
+export interface ReviewReferencesErrorMessage {
+  type: "references-error";
+  requestId: string;
+  message: string;
+}
+
+export interface ReviewSubmitAckMessage {
+  type: "submit-ack";
+  requestId: string;
+  commentCount: number;
+  hasOverallComment: boolean;
+}
+
+export type ReviewHostMessage =
+  | ReviewFileDataMessage
+  | ReviewFileErrorMessage
+  | ReviewDefinitionDataMessage
+  | ReviewDefinitionErrorMessage
+  | ReviewReferencesDataMessage
+  | ReviewReferencesErrorMessage
+  | ReviewSubmitAckMessage;
 
 export interface ReviewGoModule {
   rootPath: string;

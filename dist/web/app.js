@@ -1,7 +1,7 @@
 (() => {
   // src/web/shared/lib/utils.ts
   function escapeHtml(value) {
-    return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;");
+    return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
   function inferLanguage(path) {
     if (!path)
@@ -49,11 +49,11 @@
   function scopeHint(scope) {
     switch (scope) {
       case "git-diff":
-        return "Review working tree changes against HEAD. Hover or click line numbers in the gutter to add an inline comment. Cmd/Ctrl-click repo-local imports to jump to the referenced file, or use References for related review context.";
+        return "Working tree against HEAD. Use gutter clicks for inline comments, Cmd/Ctrl-click for navigation when supported, F to search code, Cmd/Ctrl+P to jump to files, S for changed symbols, E to ask the agent about the current selection, and Cmd/Ctrl+Shift+P for clipboard commands.";
       case "last-commit":
-        return "Review the last commit against its parent. Hover or click line numbers in the gutter to add an inline comment. Cmd/Ctrl-click repo-local imports to jump to the referenced file, or use References for related review context.";
+        return "Last commit against its parent. Use gutter clicks for inline comments, Cmd/Ctrl-click for navigation when supported, F to search code, Cmd/Ctrl+P to jump to files, S for changed symbols, E to ask the agent about the current selection, and Cmd/Ctrl+Shift+P for clipboard commands.";
       default:
-        return "Review the current working tree snapshot. Hover or click line numbers in the gutter to add a code review comment. Cmd/Ctrl-click repo-local imports to jump to the referenced file, or use References for related review context.";
+        return "Current working tree snapshot. Use gutter clicks for inline comments, Cmd/Ctrl-click for navigation when supported, F to search code, Cmd/Ctrl+P to jump to files, S for changed symbols, E to ask the agent about the current selection, and Cmd/Ctrl+Shift+P for clipboard commands.";
     }
   }
   function statusLabel(status) {
@@ -73,63 +73,8 @@
         return "text-[#58a6ff]";
     }
   }
-  function normalizeQuery(query) {
-    return String(query || "").trim().toLowerCase().replace(/\s+/g, "");
-  }
-  function scoreSubsequence(query, candidate) {
-    if (!query)
-      return 0;
-    let queryIndex = 0;
-    let score = 0;
-    let firstMatchIndex = -1;
-    let previousMatchIndex = -2;
-    for (let i = 0;i < candidate.length && queryIndex < query.length; i += 1) {
-      if (candidate[i] !== query[queryIndex])
-        continue;
-      if (firstMatchIndex === -1)
-        firstMatchIndex = i;
-      score += 10;
-      if (i === previousMatchIndex + 1) {
-        score += 8;
-      }
-      const previousChar = i > 0 ? candidate[i - 1] : "";
-      if (i === 0 || previousChar === "/" || previousChar === "_" || previousChar === "-" || previousChar === ".") {
-        score += 12;
-      }
-      previousMatchIndex = i;
-      queryIndex += 1;
-    }
-    if (queryIndex !== query.length)
-      return -1;
-    if (firstMatchIndex >= 0)
-      score += Math.max(0, 20 - firstMatchIndex);
-    return score;
-  }
-  function getFileSearchScore(query, file) {
-    const normalizedQuery = normalizeQuery(query);
-    if (!normalizedQuery)
-      return 0;
-    const path = getFileSearchPath(file).toLowerCase();
-    const baseName = getBaseName(path);
-    const pathScore = scoreSubsequence(normalizedQuery, path);
-    const baseScore = scoreSubsequence(normalizedQuery, baseName);
-    let score = Math.max(pathScore, baseScore >= 0 ? baseScore + 40 : -1);
-    if (score < 0)
-      return -1;
-    if (baseName === normalizedQuery)
-      score += 200;
-    else if (baseName.startsWith(normalizedQuery))
-      score += 120;
-    else if (path.includes(normalizedQuery))
-      score += 35;
-    return score;
-  }
   function getFileSearchPath(file) {
     return file?.path || "";
-  }
-  function getBaseName(path) {
-    const parts = path.split("/");
-    return parts[parts.length - 1] || path;
   }
   function buildTree(files) {
     const root = {
@@ -165,266 +110,359 @@
     return root;
   }
 
-  // src/web/features/file-tree/sidebar.ts
-  function createSidebarController(options) {
-    const {
-      reviewDataFiles,
-      state,
-      sidebarEl,
-      sidebarTitleEl,
-      fileTreeEl,
-      summaryEl,
-      modeHintEl,
-      submitButton,
-      toggleReviewedButton,
-      toggleUnchangedButton,
-      toggleWrapButton,
-      toggleSidebarButton,
-      scopeDiffButton,
-      scopeLastCommitButton,
-      scopeAllButton,
-      scopeLabel: scopeLabel2,
-      scopeHint: scopeHint2,
-      statusBadgeClass: statusBadgeClass2,
-      statusLabel: statusLabel2,
-      getScopedFiles,
-      getFilteredFiles,
-      getRequestState,
-      isFileReviewed,
-      getActiveStatus,
-      activeFile,
-      openFile,
-      ensureActiveFileForScope,
-      activeFileShowsDiff
-    } = options;
-    function getSubmittedCommentCount(fileId) {
-      return state.comments.filter((comment) => {
-        if (comment.status !== "submitted")
-          return false;
-        if (comment.scope !== state.currentScope)
-          return false;
-        if (fileId != null && comment.fileId !== fileId)
-          return false;
-        return true;
-      }).length;
+  // src/shared/lib/navigation.ts
+  var SEMANTIC_DEFINITION_LANGUAGE_SET = new Set([
+    "rust",
+    "go",
+    "typescript",
+    "javascript"
+  ]);
+  function supportsSemanticDefinition(languageId) {
+    return SEMANTIC_DEFINITION_LANGUAGE_SET.has(languageId);
+  }
+  function navigationActionLabel(languageId) {
+    return supportsSemanticDefinition(languageId) ? "open definition" : "open module/import target";
+  }
+
+  // src/web/app/shared/review-helpers.ts
+  function isCommentResolved(comment) {
+    return comment.resolved === true;
+  }
+  function getCommentKind(comment) {
+    return comment.kind ?? "feedback";
+  }
+  function getCommentKindLabel(kind) {
+    switch (kind) {
+      case "question":
+        return "Question";
+      case "risk":
+        return "Risk";
+      case "explain":
+        return "Explain";
+      case "tests":
+        return "Tests";
+      default:
+        return "Feedback";
     }
-    function renderTreeNode(node, depth) {
-      const children = [...node.children.values()].sort((a, b) => {
-        if (a.kind !== b.kind)
-          return a.kind === "dir" ? -1 : 1;
-        return a.name.localeCompare(b.name);
-      });
-      const indentPx = 12;
-      for (const child of children) {
-        if (child.kind === "dir") {
-          const collapsed = state.collapsedDirs[child.path] === true;
-          const row = document.createElement("button");
-          row.type = "button";
-          row.className = "group flex w-full items-center gap-1.5 px-2 py-1 text-left text-[13px] text-[#c9d1d9] hover:bg-[#21262d]";
-          row.style.paddingLeft = `${depth * indentPx + 8}px`;
-          row.innerHTML = `
-          <svg class="h-4 w-4 shrink-0 text-[#8b949e] transition-transform ${collapsed ? "-rotate-90" : ""}" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M12.78 6.22a.749.749 0 0 1 0 1.06l-4.25 4.25a.749.749 0 0 1-1.06 0L3.22 7.28a.749.749 0 0 1 1.06-1.06L8 9.939l3.72-3.719a.749.749 0 0 1 1.06 0Z"></path>
-          </svg>
-          <span class="truncate">${escapeHtml(child.name)}</span>
-        `;
-          row.addEventListener("click", () => {
-            state.collapsedDirs[child.path] = !collapsed;
-            renderTree();
-          });
-          fileTreeEl.appendChild(row);
-          if (!collapsed)
-            renderTreeNode(child, depth + 1);
-          continue;
-        }
-        const file = child.file;
-        if (!file)
-          continue;
-        const count = getSubmittedCommentCount(file.id);
-        const reviewed = isFileReviewed(file.id);
-        const requestState = getRequestState(file.id, state.currentScope);
-        const loading = requestState.requestId != null && requestState.contents == null;
-        const errored = requestState.error != null;
-        const status = getActiveStatus(file);
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = [
-          "group flex w-full items-center justify-between gap-2 px-2 py-1 text-left text-[13px]",
-          file.id === state.activeFileId ? "bg-[#373e47] text-white" : reviewed ? "text-[#c9d1d9] hover:bg-[#21262d]" : "text-[#8b949e] hover:bg-[#21262d] hover:text-[#c9d1d9]"
-        ].join(" ");
-        button.style.paddingLeft = `${depth * indentPx + 26}px`;
-        button.innerHTML = `
-        <span class="flex min-w-0 items-center gap-1.5 truncate ${file.id === state.activeFileId ? "font-medium" : ""}">
-          <span class="shrink-0 text-[10px] ${reviewed ? "text-[#3fb950]" : errored ? "text-red-400" : loading ? "text-[#58a6ff]" : "text-transparent"}">${reviewed ? "●" : errored ? "!" : loading ? "…" : "●"}</span>
-          <span class="truncate">${escapeHtml(child.name)}</span>
-        </span>
-        <span class="flex shrink-0 items-center gap-1.5">
-          ${count > 0 ? `<span class="flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[#1f2937] px-1 text-[10px] font-medium text-[#c9d1d9]">${count}</span>` : ""}
-          ${status ? `<span class="font-medium ${statusBadgeClass2(status)}">${statusLabel2(status).charAt(0)}</span>` : ""}
-        </span>
-      `;
-        button.addEventListener("click", () => openFile(file.id));
-        fileTreeEl.appendChild(button);
+  }
+  function createComment(partial) {
+    return {
+      id: `${Date.now()}:${Math.random().toString(16).slice(2)}`,
+      kind: partial.kind ?? "feedback",
+      resolved: partial.resolved ?? false,
+      ...partial
+    };
+  }
+  function escapeForClipboard(value) {
+    return value.replace(/\r\n/g, `
+`);
+  }
+  async function writeToClipboard(value) {
+    const text = escapeForClipboard(value);
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {}
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "true");
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    textarea.style.pointerEvents = "none";
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    try {
+      return document.execCommand("copy");
+    } catch {
+      return false;
+    } finally {
+      textarea.remove();
+    }
+  }
+  function sameNavigationTarget(left, right) {
+    if (!left || !right)
+      return false;
+    return left.fileId === right.fileId && left.scope === right.scope && left.side === right.side && left.line === right.line && left.column === right.column;
+  }
+
+  // src/web/app/models/review-file-model.ts
+  function createReviewFileModel(options) {
+    const { reviewDataFiles, state, isFileReviewed, isCommentResolved: isCommentResolved2 } = options;
+    function getScopedFiles() {
+      switch (state.currentScope) {
+        case "git-diff":
+          return reviewDataFiles.filter((file) => file.inGitDiff);
+        case "last-commit":
+          return reviewDataFiles.filter((file) => file.inLastCommit);
+        default:
+          return reviewDataFiles.filter((file) => file.hasWorkingTreeFile);
       }
     }
-    function renderSearchResults(files) {
-      files.forEach((file) => {
-        const path = getFileSearchPath(file);
-        const baseName = getBaseName(path);
-        const parentPath = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
-        const count = getSubmittedCommentCount(file.id);
-        const reviewed = isFileReviewed(file.id);
-        const requestState = getRequestState(file.id, state.currentScope);
-        const loading = requestState.requestId != null && requestState.contents == null;
-        const errored = requestState.error != null;
-        const status = getActiveStatus(file);
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = [
-          "group flex w-full items-center justify-between gap-3 rounded-md px-2 py-2 text-left",
-          file.id === state.activeFileId ? "bg-[#373e47] text-white" : "text-[#c9d1d9] hover:bg-[#21262d]"
-        ].join(" ");
-        button.innerHTML = `
-        <span class="min-w-0 flex-1">
-          <span class="flex items-center gap-1.5">
-            <span class="shrink-0 text-[10px] ${reviewed ? "text-[#3fb950]" : errored ? "text-red-400" : loading ? "text-[#58a6ff]" : "text-transparent"}">${reviewed ? "●" : errored ? "!" : loading ? "…" : "●"}</span>
-            <span class="truncate text-[13px] ${file.id === state.activeFileId ? "font-medium" : ""}>${escapeHtml(baseName)}</span>
-          </span>
-          <span class="mt-0.5 block truncate pl-[14px] text-[11px] ${file.id === state.activeFileId ? "text-[#c9d1d9]" : "text-review-muted"}">${escapeHtml(parentPath || path)}</span>
-        </span>
-        <span class="flex shrink-0 items-center gap-1.5">
-          ${count > 0 ? `<span class="flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[#1f2937] px-1 text-[10px] font-medium text-[#c9d1d9]">${count}</span>` : ""}
-          ${status ? `<span class="font-medium ${statusBadgeClass2(status)}">${statusLabel2(status).charAt(0)}</span>` : ""}
-        </span>
-      `;
-        button.addEventListener("click", () => openFile(file.id));
-        fileTreeEl.appendChild(button);
-      });
-    }
-    function updateSidebarLayout() {
-      const collapsed = state.sidebarCollapsed;
-      sidebarEl.style.width = collapsed ? "0px" : "280px";
-      sidebarEl.style.minWidth = collapsed ? "0px" : "280px";
-      sidebarEl.style.flexBasis = collapsed ? "0px" : "280px";
-      sidebarEl.style.borderRightWidth = collapsed ? "0px" : "1px";
-      sidebarEl.style.pointerEvents = collapsed ? "none" : "auto";
-      toggleSidebarButton.textContent = collapsed ? "Show sidebar" : "Hide sidebar";
-    }
-    function updateScopeButtons() {
-      const counts = {
-        diff: reviewDataFiles.filter((file) => file.inGitDiff).length,
-        lastCommit: reviewDataFiles.filter((file) => file.inLastCommit).length,
-        all: reviewDataFiles.filter((file) => file.hasWorkingTreeFile).length
-      };
-      const applyButtonClasses = (button, active, disabled) => {
-        button.disabled = disabled;
-        button.className = disabled ? "cursor-default rounded-md border border-review-border bg-[#11161d] px-2.5 py-1 text-[11px] font-medium text-review-muted opacity-60" : active ? "cursor-pointer rounded-md border border-[#2ea043]/40 bg-[#238636]/15 px-2.5 py-1 text-[11px] font-medium text-[#3fb950] hover:bg-[#238636]/25" : "cursor-pointer rounded-md border border-review-border bg-review-panel px-2.5 py-1 text-[11px] font-medium text-review-text hover:bg-[#21262d]";
-      };
-      scopeDiffButton.textContent = `Git diff${counts.diff > 0 ? ` (${counts.diff})` : ""}`;
-      scopeLastCommitButton.textContent = `Last commit${counts.lastCommit > 0 ? ` (${counts.lastCommit})` : ""}`;
-      scopeAllButton.textContent = `All files${counts.all > 0 ? ` (${counts.all})` : ""}`;
-      applyButtonClasses(scopeDiffButton, state.currentScope === "git-diff", counts.diff === 0);
-      applyButtonClasses(scopeLastCommitButton, state.currentScope === "last-commit", counts.lastCommit === 0);
-      applyButtonClasses(scopeAllButton, state.currentScope === "all-files", counts.all === 0);
-    }
-    function updateToggleButtons() {
-      const file = activeFile();
-      const reviewed = file ? isFileReviewed(file.id) : false;
-      toggleReviewedButton.textContent = reviewed ? "Reviewed" : "Mark reviewed";
-      toggleReviewedButton.className = reviewed ? "cursor-pointer rounded-md border border-[#2ea043]/40 bg-[#238636]/15 px-3 py-1 text-xs font-medium text-[#3fb950] hover:bg-[#238636]/25" : "cursor-pointer rounded-md border border-review-border bg-review-panel px-3 py-1 text-xs font-medium text-review-text hover:bg-[#21262d]";
-      toggleWrapButton.textContent = `Wrap lines: ${state.wrapLines ? "on" : "off"}`;
-      toggleUnchangedButton.textContent = state.hideUnchanged ? "Show full file" : "Show changed areas only";
-      toggleUnchangedButton.style.display = activeFileShowsDiff() ? "inline-flex" : "none";
-      updateScopeButtons();
-      modeHintEl.textContent = scopeHint2(state.currentScope);
-      submitButton.disabled = false;
-    }
-    function renderTree() {
-      ensureActiveFileForScope();
-      fileTreeEl.innerHTML = "";
+    function ensureActiveFileForScope() {
       const scopedFiles = getScopedFiles();
-      const visibleFiles = getFilteredFiles();
-      if (visibleFiles.length === 0) {
-        const message = state.fileFilter.trim() ? `No files match <span class="text-review-text">${escapeHtml(state.fileFilter.trim())}</span>.` : `No files in <span class="text-review-text">${escapeHtml(scopeLabel2(state.currentScope).toLowerCase())}</span>.`;
-        fileTreeEl.innerHTML = `
-        <div class="px-3 py-4 text-sm text-review-muted">
-          ${message}
-        </div>
-      `;
-      } else if (state.fileFilter.trim()) {
-        renderSearchResults(visibleFiles);
-      } else {
-        renderTreeNode(buildTree(visibleFiles), 0);
+      if (scopedFiles.length === 0) {
+        state.activeFileId = null;
+        return;
       }
-      sidebarTitleEl.textContent = scopeLabel2(state.currentScope);
-      const comments = getSubmittedCommentCount();
-      const filteredSuffix = state.fileFilter.trim() ? ` • ${visibleFiles.length} shown` : "";
-      summaryEl.textContent = `${scopedFiles.length} file(s) • ${comments} comment(s)${state.overallComment ? " • overall note" : ""}${filteredSuffix}`;
-      updateToggleButtons();
-      updateSidebarLayout();
+      if (scopedFiles.some((file) => file.id === state.activeFileId)) {
+        return;
+      }
+      state.activeFileId = scopedFiles[0].id;
+    }
+    function activeFile() {
+      return reviewDataFiles.find((file) => file.id === state.activeFileId) ?? null;
+    }
+    function getScopeComparison(file, scope = state.currentScope) {
+      if (!file)
+        return null;
+      if (scope === "git-diff")
+        return file.gitDiff;
+      if (scope === "last-commit")
+        return file.lastCommit;
+      return null;
+    }
+    function activeComparison() {
+      return getScopeComparison(activeFile(), state.currentScope);
+    }
+    function activeFileShowsDiff() {
+      return activeComparison() != null;
+    }
+    function getScopeFilePath(file) {
+      const comparison = getScopeComparison(file, state.currentScope);
+      return comparison?.newPath || comparison?.oldPath || file?.path || "";
+    }
+    function getScopeDisplayPath(file, scope = state.currentScope) {
+      const comparison = getScopeComparison(file, scope);
+      return comparison?.displayPath || file?.path || "";
+    }
+    function getScopeSidePath(file, scope, side) {
+      const comparison = getScopeComparison(file, scope);
+      if (!comparison)
+        return file?.path || "";
+      if (side === "original") {
+        return comparison.oldPath || comparison.newPath || file?.path || "";
+      }
+      return comparison.newPath || comparison.oldPath || file?.path || "";
+    }
+    function getActiveStatus(file) {
+      const comparison = getScopeComparison(file, state.currentScope);
+      return comparison?.status ?? file?.worktreeStatus ?? null;
+    }
+    function getFilteredFiles() {
+      return getScopedFiles().filter((file) => {
+        if (state.showChangedFilesOnly) {
+          const changed = file.worktreeStatus != null || file.inGitDiff || file.inLastCommit;
+          if (!changed)
+            return false;
+        }
+        if (state.statusFilter !== "all") {
+          const status = getActiveStatus(file) ?? file.worktreeStatus;
+          if (status !== state.statusFilter)
+            return false;
+        }
+        if (state.hideReviewedFiles && isFileReviewed(file.id)) {
+          return false;
+        }
+        if (state.showCommentedFilesOnly) {
+          const hasComments = state.comments.some((comment) => comment.fileId === file.id && comment.scope === state.currentScope && comment.status === "submitted" && !isCommentResolved2(comment));
+          if (!hasComments)
+            return false;
+        }
+        return true;
+      });
     }
     return {
-      renderTree,
-      updateSidebarLayout,
-      updateScopeButtons,
-      updateToggleButtons
+      getScopedFiles,
+      ensureActiveFileForScope,
+      activeFile,
+      getScopeComparison,
+      activeComparison,
+      activeFileShowsDiff,
+      getScopeFilePath,
+      getScopeDisplayPath,
+      getScopeSidePath,
+      getActiveStatus,
+      getFilteredFiles
     };
   }
 
-  // src/web/shared/state/review-state.ts
-  function createInitialReviewState(reviewData) {
-    return {
-      activeFileId: null,
-      currentScope: reviewData.files.some((file) => file.inGitDiff) ? "git-diff" : reviewData.files.some((file) => file.inLastCommit) ? "last-commit" : "all-files",
-      comments: [],
-      overallComment: "",
-      hideUnchanged: false,
-      wrapLines: true,
-      collapsedDirs: {},
-      reviewedFiles: {},
-      scrollPositions: {},
-      sidebarCollapsed: false,
-      fileFilter: "",
-      fileContents: {},
-      fileErrors: {},
-      pendingRequestIds: {}
+  // src/web/app/search/review-code-search.ts
+  function createReviewCodeSearchController(options) {
+    const {
+      scope,
+      getScopedFiles,
+      getScopeComparison,
+      getScopeSidePath,
+      loadFileContents,
+      onStateChange
+    } = options;
+    const state = {
+      query: "",
+      searching: false,
+      results: []
     };
-  }
-
-  // src/web/app/dom.ts
-  function getReviewDomElements() {
+    let debounceTimeout = null;
+    let sequence = 0;
+    const lineCache = new Map;
+    function getState() {
+      return state;
+    }
+    function clear() {
+      sequence += 1;
+      state.query = "";
+      state.searching = false;
+      state.results = [];
+    }
+    function collectMatches(file, contents, query) {
+      if (!contents)
+        return [];
+      const currentScope = scope();
+      const loweredQuery = query.toLowerCase();
+      const matches = [];
+      const comparison = getScopeComparison(file, currentScope);
+      const candidates = [];
+      if (currentScope === "all-files") {
+        candidates.push({
+          side: "modified",
+          path: file.path,
+          content: contents.modifiedContent
+        });
+      } else {
+        if (comparison?.hasOriginal) {
+          candidates.push({
+            side: "original",
+            path: getScopeSidePath(file, currentScope, "original"),
+            content: contents.originalContent
+          });
+        }
+        if (comparison?.hasModified) {
+          candidates.push({
+            side: "modified",
+            path: getScopeSidePath(file, currentScope, "modified"),
+            content: contents.modifiedContent
+          });
+        }
+      }
+      for (const candidate of candidates) {
+        const lines = candidate.content.split(/\r?\n/);
+        const cacheKey = `${currentScope}:${file.id}:${candidate.side}`;
+        const cached = lineCache.get(cacheKey);
+        const indexed = cached && cached.content === candidate.content ? cached : {
+          content: candidate.content,
+          lines,
+          loweredLines: lines.map((line) => line.toLowerCase())
+        };
+        if (indexed !== cached) {
+          lineCache.set(cacheKey, indexed);
+        }
+        for (let index = 0;index < indexed.lines.length; index += 1) {
+          const lineText = indexed.lines[index] ?? "";
+          const loweredLine = indexed.loweredLines[index] ?? "";
+          const matchIndex = loweredLine.indexOf(loweredQuery);
+          if (matchIndex === -1)
+            continue;
+          matches.push({
+            target: {
+              fileId: file.id,
+              scope: currentScope,
+              side: candidate.side,
+              line: index + 1,
+              column: matchIndex + 1
+            },
+            path: candidate.path,
+            lineNumber: index + 1,
+            lineText,
+            matchStartColumn: matchIndex + 1,
+            matchEndColumn: matchIndex + trimmedQueryLength(query)
+          });
+          if (matches.length >= 5) {
+            return matches;
+          }
+        }
+      }
+      return matches;
+    }
+    function trimmedQueryLength(query) {
+      return Math.max(1, query.trim().length);
+    }
+    async function run(query) {
+      const trimmedQuery = query.trim();
+      const runSequence = ++sequence;
+      const currentScope = scope();
+      if (trimmedQuery.length < 2) {
+        clear();
+        onStateChange();
+        return;
+      }
+      state.query = trimmedQuery;
+      state.searching = true;
+      state.results = [];
+      onStateChange();
+      const loadedFiles = await Promise.all(getScopedFiles().map(async (file) => ({
+        file,
+        contents: await loadFileContents(file.id, currentScope)
+      })));
+      if (runSequence !== sequence) {
+        return;
+      }
+      state.query = trimmedQuery;
+      state.searching = false;
+      state.results = loadedFiles.flatMap(({ file, contents }) => collectMatches(file, contents, trimmedQuery)).sort((left, right) => {
+        if (left.path !== right.path)
+          return left.path.localeCompare(right.path);
+        if (left.lineNumber !== right.lineNumber) {
+          return left.lineNumber - right.lineNumber;
+        }
+        return left.target.side.localeCompare(right.target.side);
+      }).slice(0, 60);
+      onStateChange();
+    }
+    function schedule(query) {
+      if (debounceTimeout != null) {
+        window.clearTimeout(debounceTimeout);
+      }
+      const trimmedQuery = query.trim();
+      if (trimmedQuery.length < 2) {
+        clear();
+        onStateChange();
+        return;
+      }
+      state.query = trimmedQuery;
+      state.searching = true;
+      state.results = [];
+      onStateChange();
+      debounceTimeout = window.setTimeout(() => {
+        debounceTimeout = null;
+        run(query);
+      }, 160);
+    }
+    function refresh(query) {
+      run(query);
+    }
     return {
-      sidebarEl: document.getElementById("sidebar"),
-      sidebarTitleEl: document.getElementById("sidebar-title"),
-      sidebarSearchInputEl: document.getElementById("sidebar-search-input"),
-      toggleSidebarButton: document.getElementById("toggle-sidebar-button"),
-      scopeDiffButton: document.getElementById("scope-diff-button"),
-      scopeLastCommitButton: document.getElementById("scope-last-commit-button"),
-      scopeAllButton: document.getElementById("scope-all-button"),
-      windowTitleEl: document.getElementById("window-title"),
-      repoRootEl: document.getElementById("repo-root"),
-      fileTreeEl: document.getElementById("file-tree"),
-      summaryEl: document.getElementById("summary"),
-      currentFileLabelEl: document.getElementById("current-file-label"),
-      currentSymbolLabelEl: document.getElementById("current-symbol-label"),
-      modeHintEl: document.getElementById("mode-hint"),
-      fileCommentsContainer: document.getElementById("file-comments-container"),
-      editorContainerEl: document.getElementById("editor-container"),
-      submitButton: document.getElementById("submit-button"),
-      cancelButton: document.getElementById("cancel-button"),
-      overallCommentButton: document.getElementById("overall-comment-button"),
-      fileCommentButton: document.getElementById("file-comment-button"),
-      navigateBackButton: document.getElementById("navigate-back-button"),
-      navigateForwardButton: document.getElementById("navigate-forward-button"),
-      showReferencesButton: document.getElementById("show-references-button"),
-      peekDefinitionButton: document.getElementById("peek-definition-button"),
-      toggleReviewedButton: document.getElementById("toggle-reviewed-button"),
-      toggleUnchangedButton: document.getElementById("toggle-unchanged-button"),
-      toggleWrapButton: document.getElementById("toggle-wrap-button")
+      getState,
+      clear,
+      schedule,
+      refresh
     };
   }
 
   // src/web/features/comments/modals.ts
+  function getCommentKindLabel2(kind) {
+    switch (kind) {
+      case "question":
+        return "Question";
+      case "risk":
+        return "Risk";
+      case "explain":
+        return "Explain";
+      case "tests":
+        return "Tests";
+      default:
+        return "Feedback";
+    }
+  }
   function insertAtCursor(textarea, value) {
     const before = textarea.value.slice(0, textarea.selectionStart ?? textarea.value.length);
     const after = textarea.value.slice(textarea.selectionEnd ?? textarea.value.length);
@@ -594,6 +632,216 @@
         close();
     });
   }
+  function showActionModal(options) {
+    const backdrop = document.createElement("div");
+    backdrop.className = "review-modal-backdrop";
+    backdrop.innerHTML = `
+    <div class="review-modal-card">
+      <div class="mb-2 text-base font-semibold text-white">${escapeHtml(options.title)}</div>
+      <div class="mb-4 text-sm text-review-muted">${escapeHtml(options.description)}</div>
+      <div class="space-y-2">
+        ${options.actions.map((action, index) => `
+              <button data-action-index="${index}" class="w-full rounded-md border border-review-border bg-[#010409] px-4 py-3 text-left hover:bg-[#11161d] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                <div class="text-sm font-medium text-review-text">${escapeHtml(action.label)}</div>
+                <div class="mt-1 text-xs leading-5 text-review-muted">${escapeHtml(action.description)}</div>
+              </button>
+            `).join("")}
+      </div>
+      <div class="mt-4 flex justify-end">
+        <button id="review-modal-close" class="cursor-pointer rounded-md border border-review-border bg-review-panel px-4 py-2 text-sm font-medium text-review-text hover:bg-[#21262d]">Close</button>
+      </div>
+    </div>
+  `;
+    document.body.appendChild(backdrop);
+    const close = () => backdrop.remove();
+    backdrop.querySelector("#review-modal-close")?.addEventListener("click", close);
+    backdrop.querySelectorAll("[data-action-index]").forEach((node) => {
+      node.addEventListener("click", () => {
+        const index = Number(node.getAttribute("data-action-index") || "-1");
+        const action = options.actions[index];
+        if (!action)
+          return;
+        action.onSelect();
+        close();
+      });
+    });
+    backdrop.addEventListener("click", (event) => {
+      if (event.target === backdrop)
+        close();
+    });
+  }
+  function showSymbolModal(options) {
+    const backdrop = document.createElement("div");
+    backdrop.className = "review-modal-backdrop";
+    backdrop.innerHTML = `
+    <div class="review-modal-card">
+      <div class="mb-2 text-base font-semibold text-white">${escapeHtml(options.title)}</div>
+      <div class="mb-4 text-sm text-review-muted">${escapeHtml(options.description)}</div>
+      <input
+        id="review-symbol-search"
+        type="text"
+        spellcheck="false"
+        autocomplete="off"
+        placeholder="Filter symbols"
+        class="mb-3 w-full rounded-md border border-review-border bg-[#010409] px-3 py-2 text-sm text-review-text outline-none placeholder:text-review-muted focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+      />
+      <div id="review-symbol-list" class="scrollbar-thin max-h-[55vh] space-y-2 overflow-auto"></div>
+      <div class="mt-4 flex justify-end">
+        <button id="review-modal-close" class="cursor-pointer rounded-md border border-review-border bg-review-panel px-4 py-2 text-sm font-medium text-review-text hover:bg-[#21262d]">Close</button>
+      </div>
+    </div>
+  `;
+    document.body.appendChild(backdrop);
+    const searchInput = backdrop.querySelector("#review-symbol-search");
+    const listEl = backdrop.querySelector("#review-symbol-list");
+    const close = () => backdrop.remove();
+    function render(query = "") {
+      if (!listEl)
+        return;
+      const normalized = query.trim().toLowerCase();
+      const items = options.items.filter((item) => {
+        if (!normalized)
+          return true;
+        return `${item.title} ${item.description} ${item.kind}`.toLowerCase().includes(normalized);
+      });
+      listEl.innerHTML = items.length > 0 ? items.map((item, index) => `
+                <button data-symbol-index="${index}" class="flex w-full items-center justify-between gap-3 rounded-md border border-review-border bg-[#010409] px-4 py-3 text-left hover:bg-[#11161d]">
+                  <span class="min-w-0">
+                    <span class="block truncate text-sm font-medium text-review-text">${escapeHtml(item.title)}</span>
+                    <span class="mt-1 block truncate text-xs text-review-muted">${escapeHtml(item.description)}</span>
+                  </span>
+                  <span class="shrink-0 rounded-md border border-review-border bg-review-panel px-2 py-0.5 text-[11px] font-medium text-review-muted">${escapeHtml(item.kind)}</span>
+                </button>
+              `).join("") : `<div class="rounded-md border border-review-border bg-[#010409] px-4 py-4 text-sm text-review-muted">No symbols match this filter.</div>`;
+      listEl.querySelectorAll("[data-symbol-index]").forEach((node) => {
+        node.addEventListener("click", () => {
+          const index = Number(node.getAttribute("data-symbol-index") || "-1");
+          const filtered = options.items.filter((item) => {
+            if (!normalized)
+              return true;
+            return `${item.title} ${item.description} ${item.kind}`.toLowerCase().includes(normalized);
+          });
+          filtered[index]?.onSelect();
+          close();
+        });
+      });
+    }
+    backdrop.querySelector("#review-modal-close")?.addEventListener("click", close);
+    searchInput?.addEventListener("input", () => render(searchInput.value));
+    backdrop.addEventListener("click", (event) => {
+      if (event.target === backdrop)
+        close();
+    });
+    render();
+    searchInput?.focus();
+  }
+  function showCommandPaletteModal(options) {
+    const backdrop = document.createElement("div");
+    backdrop.className = "review-modal-backdrop";
+    backdrop.innerHTML = `
+    <div class="review-modal-card">
+      <div class="mb-2 text-base font-semibold text-white">${escapeHtml(options.title)}</div>
+      <div class="mb-4 text-sm text-review-muted">${escapeHtml(options.description)}</div>
+      <input
+        id="review-command-search"
+        type="text"
+        spellcheck="false"
+        autocomplete="off"
+        placeholder="Type a command"
+        class="mb-3 w-full rounded-md border border-review-border bg-[#010409] px-3 py-2 text-sm text-review-text outline-none placeholder:text-review-muted focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+      />
+      <div id="review-command-list" class="scrollbar-thin max-h-[55vh] space-y-2 overflow-auto"></div>
+      <div class="mt-4 flex items-center justify-between gap-3 text-xs text-review-muted">
+        <span>Enter to run</span>
+        <span>Esc to close</span>
+      </div>
+    </div>
+  `;
+    document.body.appendChild(backdrop);
+    const searchInput = backdrop.querySelector("#review-command-search");
+    const listEl = backdrop.querySelector("#review-command-list");
+    let activeIndex = 0;
+    const close = () => {
+      document.removeEventListener("keydown", onKeyDown, true);
+      backdrop.remove();
+    };
+    function getFilteredItems() {
+      const query = (searchInput?.value || "").trim().toLowerCase();
+      if (!query)
+        return options.items;
+      return options.items.filter((item) => `${item.label} ${item.detail || ""} ${item.hint || ""}`.toLowerCase().includes(query));
+    }
+    function render() {
+      if (!listEl)
+        return;
+      const items = getFilteredItems();
+      if (activeIndex >= items.length) {
+        activeIndex = Math.max(0, items.length - 1);
+      }
+      listEl.innerHTML = items.length > 0 ? items.map((item, index) => `
+                <button data-command-index="${index}" class="${index === activeIndex ? "border-blue-500 bg-[#11161d]" : "border-review-border bg-[#010409] hover:bg-[#11161d]"} flex w-full items-center justify-between gap-3 rounded-md border px-4 py-3 text-left focus:outline-none">
+                  <span class="min-w-0">
+                    <span class="block truncate text-sm font-medium text-review-text">${escapeHtml(item.label)}</span>
+                    ${item.detail ? `<span class="mt-1 block truncate text-xs text-review-muted">${escapeHtml(item.detail)}</span>` : ""}
+                  </span>
+                  ${item.hint ? `<span class="shrink-0 text-[11px] text-review-muted">${escapeHtml(item.hint)}</span>` : ""}
+                </button>
+              `).join("") : `<div class="rounded-md border border-review-border bg-[#010409] px-4 py-4 text-sm text-review-muted">No commands match this filter.</div>`;
+      listEl.querySelectorAll("[data-command-index]").forEach((node) => {
+        node.addEventListener("click", () => {
+          const index = Number(node.getAttribute("data-command-index") || "-1");
+          const item = getFilteredItems()[index];
+          if (!item)
+            return;
+          item.onSelect();
+          close();
+        });
+      });
+    }
+    function runActive() {
+      const item = getFilteredItems()[activeIndex];
+      if (!item)
+        return;
+      item.onSelect();
+      close();
+    }
+    function onKeyDown(event) {
+      if (!backdrop.isConnected)
+        return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        close();
+        return;
+      }
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        activeIndex = Math.min(activeIndex + 1, Math.max(0, getFilteredItems().length - 1));
+        render();
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        activeIndex = Math.max(activeIndex - 1, 0);
+        render();
+        return;
+      }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        runActive();
+      }
+    }
+    searchInput?.addEventListener("input", () => {
+      activeIndex = 0;
+      render();
+    });
+    backdrop.addEventListener("click", (event) => {
+      if (event.target === backdrop)
+        close();
+    });
+    document.addEventListener("keydown", onKeyDown, true);
+    render();
+    searchInput?.focus();
+  }
   function renderCommentDOM(comment, scopeLabel2, options) {
     const container = document.createElement("div");
     container.className = "view-zone-container";
@@ -601,7 +849,18 @@
     if (comment.status === "draft") {
       container.innerHTML = `
       <div class="mb-3 flex items-center justify-between gap-3">
-        <div class="text-xs font-semibold text-review-text">${escapeHtml(title)}</div>
+        <div class="min-w-0">
+          <div class="truncate text-xs font-semibold text-review-text">${escapeHtml(title)}</div>
+          <div class="mt-2">
+            <select data-comment-kind class="rounded-md border border-review-border bg-[#010409] px-2 py-1 text-xs font-medium text-review-text outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+              <option value="feedback">Feedback</option>
+              <option value="question">Question</option>
+              <option value="risk">Risk</option>
+              <option value="explain">Explain</option>
+              <option value="tests">Tests</option>
+            </select>
+          </div>
+        </div>
         <div class="flex items-center gap-2">
           <button data-action="cancel" class="cursor-pointer rounded-md border border-review-border bg-review-panel px-3 py-1.5 text-xs font-medium text-review-text hover:bg-[#21262d]">Cancel</button>
           <button data-action="submit" class="cursor-pointer rounded-md border border-[rgba(240,246,252,0.1)] bg-[#238636] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#2ea043] disabled:cursor-not-allowed disabled:opacity-50">Submit</button>
@@ -612,10 +871,17 @@
       const textarea = container.querySelector("textarea");
       const cancelButton = container.querySelector("[data-action='cancel']");
       const submitButton = container.querySelector("[data-action='submit']");
+      const kindSelect = container.querySelector("[data-comment-kind]");
       if (!textarea) {
         return container;
       }
       textarea.value = comment.body || "";
+      if (kindSelect) {
+        kindSelect.value = comment.kind ?? "feedback";
+        kindSelect.addEventListener("change", () => {
+          comment.kind = kindSelect.value;
+        });
+      }
       setupPasteHandler(textarea);
       const syncSubmitState = () => {
         if (!submitButton)
@@ -645,6 +911,8 @@
     const preview = comment.body.trim().split(`
 `)[0] || "Comment";
     const toggleLabel = comment.collapsed ? "Expand comment" : "Collapse comment";
+    const kind = comment.kind ?? "feedback";
+    const resolved = comment.resolved === true;
     container.innerHTML = `
     <div class="rounded-md border border-review-border bg-review-panel">
       <div class="flex items-center gap-2 px-3 py-2">
@@ -653,10 +921,15 @@
             <path d="M12.78 6.22a.749.749 0 0 1 0 1.06l-4.25 4.25a.749.749 0 0 1-1.06 0L3.22 7.28a.749.749 0 0 1 1.06-1.06L8 9.939l3.72-3.719a.749.749 0 0 1 1.06 0Z"></path>
           </svg>
           <span class="min-w-0 flex-1">
-            <span class="block truncate text-xs font-semibold text-review-text">${escapeHtml(title)}</span>
+            <span class="flex items-center gap-2">
+              <span class="block truncate text-xs font-semibold text-review-text">${escapeHtml(title)}</span>
+              <span class="shrink-0 rounded-md border border-review-border bg-[#0d1117] px-2 py-0.5 text-[10px] font-medium text-review-muted">${escapeHtml(getCommentKindLabel2(kind))}</span>
+              ${resolved ? `<span class="shrink-0 rounded-md border border-[#2ea043]/35 bg-[#238636]/12 px-2 py-0.5 text-[10px] font-medium text-[#3fb950]">Resolved</span>` : ""}
+            </span>
             ${comment.collapsed ? `<span class="mt-0.5 block truncate text-xs text-review-muted">${escapeHtml(preview)}</span>` : ""}
           </span>
         </button>
+        <button data-action="resolve" class="cursor-pointer rounded-md border border-transparent bg-transparent px-2 py-1 text-xs font-medium text-review-muted hover:bg-[#11161d] hover:text-review-text">${resolved ? "Reopen" : "Resolve"}</button>
         ${comment.collapsed ? "" : `<button data-action="delete" class="cursor-pointer rounded-md border border-transparent bg-transparent px-2 py-1 text-xs font-medium text-review-muted hover:bg-red-500/10 hover:text-red-400">Delete</button>`}
       </div>
       ${comment.collapsed ? "" : `<div class="border-t border-review-border px-3 py-3 whitespace-pre-wrap break-words text-sm text-review-text">${escapeHtml(comment.body)}</div>`}
@@ -664,12 +937,785 @@
   `;
     const toggleButton = container.querySelector("[data-action='toggle']");
     const deleteButton = container.querySelector("[data-action='delete']");
+    const resolveButton = container.querySelector("[data-action='resolve']");
     toggleButton?.addEventListener("click", () => {
       comment.collapsed = !comment.collapsed;
       options.onUpdate();
     });
+    resolveButton?.addEventListener("click", () => {
+      comment.resolved = !(comment.resolved === true);
+      options.onUpdate();
+    });
     deleteButton?.addEventListener("click", options.onDelete);
     return container;
+  }
+
+  // src/web/app/commands/review-command-palette.ts
+  function createReviewCommandPaletteController(options) {
+    const {
+      state,
+      currentSymbolLabelEl,
+      sidebarSearchInputEl,
+      getScopedFiles,
+      activeFile,
+      getScopeDisplayPath,
+      getActiveStatus,
+      statusLabel: statusLabel2,
+      scopeLabel: scopeLabel2,
+      getCurrentSelectionContext,
+      getCurrentNavigationTarget,
+      getActiveLocationLabel,
+      getSelectionReference,
+      loadFileContents,
+      describeNavigationTarget,
+      writeToClipboard: writeToClipboard2,
+      flashSummary,
+      openFile,
+      handleShowChangedSymbols,
+      handleAgentAction,
+      navigateUnresolvedComment
+    } = options;
+    function openQuickOpenFiles() {
+      const scopedFiles = getScopedFiles().slice().sort((left, right) => getScopeDisplayPath(left, state.currentScope).localeCompare(getScopeDisplayPath(right, state.currentScope)));
+      showCommandPaletteModal({
+        title: "Go to File",
+        description: "Jump to a file in the current review scope.",
+        items: scopedFiles.map((file) => ({
+          label: getScopeDisplayPath(file, state.currentScope),
+          detail: file.path !== getScopeDisplayPath(file, state.currentScope) ? file.path : scopeLabel2(state.currentScope),
+          hint: getActiveStatus(file) != null ? statusLabel2(getActiveStatus(file)) : undefined,
+          onSelect: () => {
+            openFile(file.id);
+          }
+        }))
+      });
+    }
+    function openCommandPalette() {
+      const file = activeFile();
+      const selection = getCurrentSelectionContext();
+      const selectionText = selection?.selectedText.trim() || "";
+      const activeLocation = getActiveLocationLabel();
+      const selectionReference = getSelectionReference();
+      showCommandPaletteModal({
+        title: "Command Palette",
+        description: "Fast review commands for copying context and moving around the diff.",
+        items: [
+          {
+            label: "File: Copy Path of Active File",
+            detail: file?.path || "No active file",
+            hint: "path",
+            onSelect: () => {
+              (async () => {
+                if (!file)
+                  return;
+                const success = await writeToClipboard2(file.path);
+                flashSummary(success ? "Copied active file path" : "Unable to copy");
+              })();
+            }
+          },
+          {
+            label: "File: Copy Location of Active Cursor",
+            detail: activeLocation || "No active cursor location",
+            hint: "path:line",
+            onSelect: () => {
+              (async () => {
+                if (!activeLocation)
+                  return;
+                const success = await writeToClipboard2(activeLocation);
+                flashSummary(success ? "Copied active location" : "Unable to copy");
+              })();
+            }
+          },
+          {
+            label: "File: Copy Selection Location",
+            detail: selectionReference || "No current selection",
+            hint: "range",
+            onSelect: () => {
+              (async () => {
+                if (!selectionReference)
+                  return;
+                const success = await writeToClipboard2(selectionReference);
+                flashSummary(success ? "Copied selection location" : "Unable to copy");
+              })();
+            }
+          },
+          {
+            label: "Review: Copy Selection with Context",
+            detail: selectionReference && selectionText ? `${selectionReference} plus selected code` : "Select some code first",
+            hint: "snippet",
+            onSelect: () => {
+              (async () => {
+                if (!selectionReference || !selectionText)
+                  return;
+                const payload = `${selectionReference}
+
+${selectionText}`;
+                const success = await writeToClipboard2(payload);
+                flashSummary(success ? "Copied selection context" : "Unable to copy");
+              })();
+            }
+          },
+          {
+            label: "Review: Copy Current Hunk with Context",
+            detail: file ? `${getScopeDisplayPath(file, state.currentScope)} around the current cursor` : "No active file",
+            hint: "hunk",
+            onSelect: () => {
+              (async () => {
+                const target = getCurrentNavigationTarget();
+                const active = activeFile();
+                if (!target || !active)
+                  return;
+                const contents = await loadFileContents(target.fileId, target.scope);
+                const content = target.side === "original" ? contents?.originalContent ?? "" : contents?.modifiedContent ?? "";
+                const start = Math.max(1, target.line - 8);
+                const end = target.line + 8;
+                const snippet = content.split(/\r?\n/).slice(start - 1, end).map((line, index) => `${start + index}: ${line}`).join(`
+`);
+                const payload = `${describeNavigationTarget(target)}
+
+${snippet}`;
+                const success = await writeToClipboard2(payload);
+                flashSummary(success ? "Copied current hunk with context" : "Unable to copy");
+              })();
+            }
+          },
+          {
+            label: "Symbol: Copy Current Symbol Name",
+            detail: currentSymbolLabelEl.textContent || "No current symbol",
+            hint: "symbol",
+            onSelect: () => {
+              (async () => {
+                const value = currentSymbolLabelEl.textContent?.replace(/^Symbol:\s*/, "").trim();
+                if (!value)
+                  return;
+                const success = await writeToClipboard2(value);
+                flashSummary(success ? "Copied symbol name" : "Unable to copy");
+              })();
+            }
+          },
+          {
+            label: "Review: Focus Code Search",
+            detail: "Jump to the sidebar code search input",
+            hint: "F",
+            onSelect: () => {
+              sidebarSearchInputEl.focus();
+              sidebarSearchInputEl.select();
+            }
+          },
+          {
+            label: "File: Go to File",
+            detail: "Open quick file search for the current review scope",
+            hint: "Cmd/Ctrl+P",
+            onSelect: () => {
+              openQuickOpenFiles();
+            }
+          },
+          {
+            label: "Review: Jump to Changed Symbols",
+            detail: "Open the changed-symbol navigator",
+            hint: "S",
+            onSelect: () => {
+              handleShowChangedSymbols();
+            }
+          },
+          {
+            label: "Review: Next Unresolved Comment",
+            detail: "Jump to the next unresolved comment in this scope",
+            hint: "N",
+            onSelect: () => {
+              navigateUnresolvedComment("next");
+            }
+          },
+          {
+            label: "Review: Previous Unresolved Comment",
+            detail: "Jump to the previous unresolved comment in this scope",
+            hint: "Shift+N",
+            onSelect: () => {
+              navigateUnresolvedComment("previous");
+            }
+          },
+          {
+            label: "Agent: Ask About Selection",
+            detail: selectionText ? "Create a focused review prompt from the current selection" : "Create a focused review prompt from the current file",
+            hint: "E",
+            onSelect: () => {
+              handleAgentAction();
+            }
+          }
+        ]
+      });
+    }
+    return {
+      openQuickOpenFiles,
+      openCommandPalette
+    };
+  }
+
+  // src/web/features/symbols/symbol-context.ts
+  function getReviewSymbolContext(content, lineNumber, languageId) {
+    const lines = content.split(/\r?\n/);
+    const maxIndex = Math.min(Math.max(lineNumber - 1, 0), lines.length - 1);
+    for (let index = maxIndex;index >= 0; index -= 1) {
+      const line = lines[index] || "";
+      const symbol = matchSymbolLine(line, languageId);
+      if (symbol) {
+        return { title: symbol.title, lineNumber: index + 1 };
+      }
+    }
+    return { title: null, lineNumber: null };
+  }
+  function buildPreviewSnippet(content, lineNumber, contextRadius = 3) {
+    const lines = content.split(/\r?\n/);
+    if (lines.length === 0)
+      return "";
+    const targetIndex = Math.min(Math.max(lineNumber - 1, 0), lines.length - 1);
+    const start = Math.max(0, targetIndex - contextRadius);
+    const end = Math.min(lines.length - 1, targetIndex + contextRadius);
+    return lines.slice(start, end + 1).map((line, offset) => {
+      const currentLine = start + offset + 1;
+      const prefix = currentLine === targetIndex + 1 ? ">" : " ";
+      return `${prefix} ${String(currentLine).padStart(4, " ")} ${line}`;
+    }).join(`
+`);
+  }
+  function extractReviewSymbols(content, languageId) {
+    const items = [];
+    const seen = new Set;
+    content.split(/\r?\n/).forEach((line, index) => {
+      const symbol = matchSymbolLine(line, languageId);
+      if (!symbol)
+        return;
+      const key = `${symbol.kind}:${symbol.title}:${index + 1}`;
+      if (seen.has(key))
+        return;
+      seen.add(key);
+      items.push({
+        title: symbol.title,
+        lineNumber: index + 1,
+        kind: symbol.kind
+      });
+    });
+    return items;
+  }
+  function matchSymbolLine(line, languageId) {
+    const trimmed = line.trim();
+    if (!trimmed)
+      return null;
+    switch (languageId) {
+      case "typescript":
+      case "javascript":
+        return captureSymbol(trimmed, /^(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/, "function") || captureSymbol(trimmed, /^(?:export\s+)?class\s+([A-Za-z_$][\w$]*)/, "type") || captureSymbol(trimmed, /^(?:export\s+)?interface\s+([A-Za-z_$][\w$]*)/, "type") || captureSymbol(trimmed, /^(?:export\s+)?type\s+([A-Za-z_$][\w$]*)/, "type") || captureSymbol(trimmed, /^(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?\(/, "function") || captureSymbol(trimmed, /^(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?[A-Za-z_$][\w$]*\s*=>/, "function") || captureSymbol(trimmed, /^([A-Za-z_$][\w$]*)\s*\(/, "member");
+      case "go":
+        return captureSymbol(trimmed, /^func\s+(?:\([^)]*\)\s*)?([A-Za-z_][\w]*)/, "function") || captureSymbol(trimmed, /^type\s+([A-Za-z_][\w]*)\s+(?:struct|interface)/, "type") || captureSymbol(trimmed, /^var\s+([A-Za-z_][\w]*)/, "value") || captureSymbol(trimmed, /^const\s+([A-Za-z_][\w]*)/, "value");
+      case "rust":
+        return captureSymbol(trimmed, /^(?:pub\s+)?fn\s+([A-Za-z_][\w]*)/, "function") || captureSymbol(trimmed, /^impl\s+([A-Za-z_][\w]*)/, "type") || captureSymbol(trimmed, /^(?:pub\s+)?(?:struct|enum|trait|mod)\s+([A-Za-z_][\w]*)/, trimmed.includes("mod ") ? "module" : "type");
+      case "c":
+      case "cpp":
+        return captureSymbol(trimmed, /^(?:class|struct|enum)\s+([A-Za-z_][\w]*)/, "type") || captureSymbol(trimmed, /^(?:static\s+)?(?:inline\s+)?[A-Za-z_][\w:\s*&<>]*\s+([A-Za-z_][\w]*)\s*\([^;]*\)\s*(?:\{|$)/, "function");
+      default:
+        return null;
+    }
+  }
+  function captureSymbol(value, pattern, kind) {
+    const match = value.match(pattern);
+    return match?.[1] ? {
+      title: match[1],
+      lineNumber: 0,
+      kind
+    } : null;
+  }
+
+  // src/web/app/inspector/review-inspector.ts
+  function createReviewInspectorController(options) {
+    const {
+      reviewDataFiles,
+      state,
+      outlineContainerEl,
+      reviewQueueContainerEl,
+      activeFile,
+      getCurrentNavigationTarget,
+      getScopeComparison,
+      getScopeFilePath,
+      getScopeDisplayPath,
+      loadFileContents,
+      openNavigationTarget,
+      onCommentsChange,
+      getCommentKind: getCommentKind2,
+      getCommentKindLabel: getCommentKindLabel3,
+      isCommentResolved: isCommentResolved2,
+      isCommentAnchorStale
+    } = options;
+    const outlineCache = new Map;
+    function getActiveCommentQueue() {
+      return state.comments.filter((comment) => comment.status === "submitted" && !isCommentResolved2(comment) && comment.scope === state.currentScope).sort((left, right) => {
+        if (left.fileId !== right.fileId) {
+          return left.fileId.localeCompare(right.fileId);
+        }
+        return (left.startLine ?? 0) - (right.startLine ?? 0);
+      });
+    }
+    function getCommentLocationLabel(comment) {
+      const file = reviewDataFiles.find((candidate) => candidate.id === comment.fileId) ?? null;
+      const path = getScopeDisplayPath(file, comment.scope);
+      if (comment.side === "file" || comment.startLine == null) {
+        return path;
+      }
+      const suffix = comment.scope === "all-files" ? "" : comment.side === "original" ? " old" : " new";
+      return `${path}:${comment.startLine}${suffix}`;
+    }
+    function jumpToComment(comment) {
+      const file = reviewDataFiles.find((candidate) => candidate.id === comment.fileId) ?? null;
+      const comparison = getScopeComparison(file, comment.scope);
+      openNavigationTarget({
+        fileId: comment.fileId,
+        scope: comment.scope,
+        side: comment.side === "file" ? comparison?.hasModified || comment.scope === "all-files" ? "modified" : "original" : comment.side === "original" ? "original" : "modified",
+        line: comment.startLine ?? 1,
+        column: 1
+      });
+    }
+    function renderReviewQueue() {
+      const comments = getActiveCommentQueue();
+      reviewQueueContainerEl.innerHTML = comments.length > 0 ? "" : `<div class="rounded-md border border-review-border bg-[#010409] px-3 py-3 text-sm text-review-muted">Submitted comments stay here until the review is finished.</div>`;
+      comments.forEach((comment) => {
+        const item = document.createElement("div");
+        item.className = "rounded-md border border-review-border bg-review-panel-2 px-3 py-3";
+        item.innerHTML = `
+        <div class="flex items-start justify-between gap-2">
+          <button data-action="open" class="min-w-0 flex-1 text-left">
+            <div class="flex items-center gap-2">
+              <div class="truncate text-xs font-semibold text-review-text">${getCommentKindLabel3(getCommentKind2(comment))}</div>
+              ${isCommentAnchorStale(comment) ? '<span class="shrink-0 rounded-md border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-300">Changed</span>' : ""}
+            </div>
+            <div class="mt-1 truncate text-[11px] text-review-muted">${getCommentLocationLabel(comment)}</div>
+          </button>
+          <button data-action="resolve" class="cursor-pointer rounded-md border border-review-border bg-[#0d1117] px-2 py-1 text-[11px] font-medium text-review-text hover:bg-[#1a212b]">Resolve</button>
+        </div>
+        <div class="mt-2 line-clamp-3 whitespace-pre-wrap break-words text-sm text-review-text">${comment.body.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>
+      `;
+        item.querySelector("[data-action='open']")?.addEventListener("click", () => {
+          jumpToComment(comment);
+        });
+        item.querySelector("[data-action='resolve']")?.addEventListener("click", () => {
+          comment.resolved = true;
+          onCommentsChange();
+        });
+        reviewQueueContainerEl.appendChild(item);
+      });
+    }
+    async function renderOutline() {
+      const file = activeFile();
+      const scope = state.currentScope;
+      if (!file) {
+        outlineContainerEl.innerHTML = '<div class="rounded-md border border-review-border bg-[#010409] px-3 py-3 text-sm text-review-muted">Select a file to inspect its symbols.</div>';
+        return;
+      }
+      const contents = await loadFileContents(file.id, scope);
+      if (state.activeFileId !== file.id || state.currentScope !== scope) {
+        return;
+      }
+      const useModified = scope === "all-files" || getScopeComparison(file, scope)?.hasModified;
+      const content = useModified ? contents?.modifiedContent ?? "" : contents?.originalContent ?? "";
+      const outlineKey = `${scope}:${file.id}:${useModified ? "modified" : "original"}`;
+      const cached = outlineCache.get(outlineKey);
+      const symbols = cached && cached.content === content ? cached.symbols : extractReviewSymbols(content, inferLanguage(getScopeFilePath(file)));
+      if (!cached || cached.content !== content) {
+        outlineCache.set(outlineKey, { content, symbols });
+      }
+      const current = getCurrentNavigationTarget();
+      if (symbols.length === 0) {
+        outlineContainerEl.innerHTML = '<div class="rounded-md border border-review-border bg-[#010409] px-3 py-3 text-sm text-review-muted">No outline entries were detected for this file.</div>';
+        return;
+      }
+      outlineContainerEl.innerHTML = "";
+      symbols.forEach((symbol) => {
+        const button = document.createElement("button");
+        const active = current?.fileId === file.id && current.scope === scope && current.line === symbol.lineNumber;
+        button.type = "button";
+        button.className = active ? "flex w-full items-center justify-between gap-3 rounded-md border border-[#2ea043]/35 bg-[#238636]/12 px-3 py-2 text-left" : "flex w-full items-center justify-between gap-3 rounded-md border border-transparent px-3 py-2 text-left hover:bg-[#161b22]";
+        button.innerHTML = `
+        <span class="min-w-0">
+          <span class="block truncate text-sm font-medium text-review-text">${symbol.title}</span>
+          <span class="mt-0.5 block text-[11px] text-review-muted">${symbol.kind} · line ${symbol.lineNumber}</span>
+        </span>
+        <span class="text-[11px] text-review-muted">${symbol.lineNumber}</span>
+      `;
+        button.addEventListener("click", () => {
+          openNavigationTarget({
+            fileId: file.id,
+            scope,
+            side: scope === "all-files" ? "modified" : getScopeComparison(file, scope)?.hasModified ? "modified" : "original",
+            line: symbol.lineNumber,
+            column: 1
+          });
+        });
+        outlineContainerEl.appendChild(button);
+      });
+    }
+    function getSortedUnresolvedComments() {
+      const fileOrder = new Map(reviewDataFiles.map((file, index) => [file.id, index]));
+      return state.comments.filter((comment) => comment.status === "submitted" && !isCommentResolved2(comment) && comment.scope === state.currentScope).sort((left, right) => {
+        const leftOrder = fileOrder.get(left.fileId) ?? Number.MAX_SAFE_INTEGER;
+        const rightOrder = fileOrder.get(right.fileId) ?? Number.MAX_SAFE_INTEGER;
+        if (leftOrder !== rightOrder)
+          return leftOrder - rightOrder;
+        return (left.startLine ?? 0) - (right.startLine ?? 0);
+      });
+    }
+    function navigateUnresolvedComment(direction) {
+      const comments = getSortedUnresolvedComments();
+      if (comments.length === 0)
+        return false;
+      const current = getCurrentNavigationTarget();
+      if (!current) {
+        const target = direction === "next" ? comments[0] ?? null : comments[comments.length - 1] ?? null;
+        if (!target)
+          return false;
+        jumpToComment(target);
+        return true;
+      }
+      const currentKey = [current.fileId, current.line ?? 0, current.column ?? 0].join(":");
+      const commentKeys = comments.map((comment) => [comment.fileId, comment.startLine ?? 0, 1].join(":"));
+      const currentIndex = commentKeys.findIndex((key) => key >= currentKey);
+      if (direction === "next") {
+        if (currentIndex === -1) {
+          const target = comments[0];
+          if (!target)
+            return false;
+          jumpToComment(target);
+          return true;
+        }
+        const candidate = comments[currentIndex];
+        if (candidate && (candidate.fileId !== current.fileId || (candidate.startLine ?? 0) > (current.line ?? 0))) {
+          jumpToComment(candidate);
+          return true;
+        }
+        const wrapped = comments[(currentIndex + 1) % comments.length];
+        if (!wrapped)
+          return false;
+        jumpToComment(wrapped);
+        return true;
+      }
+      if (currentIndex === -1) {
+        const target = comments[comments.length - 1];
+        if (!target)
+          return false;
+        jumpToComment(target);
+        return true;
+      }
+      const previous = currentIndex === 0 ? comments[comments.length - 1] : comments[currentIndex - 1];
+      if (!previous)
+        return false;
+      jumpToComment(previous);
+      return true;
+    }
+    return {
+      renderReviewQueue,
+      renderOutline,
+      jumpToComment,
+      getSortedUnresolvedComments,
+      navigateUnresolvedComment
+    };
+  }
+
+  // src/web/features/file-tree/sidebar.ts
+  function createSidebarController(options) {
+    const {
+      reviewDataFiles,
+      state,
+      sidebarEl,
+      sidebarTitleEl,
+      fileTreeEl,
+      summaryEl,
+      modeHintEl,
+      sidebarStatusFilterEl,
+      hideReviewedCheckboxEl,
+      commentedOnlyCheckboxEl,
+      changedOnlyCheckboxEl,
+      submitButton,
+      toggleReviewedButton,
+      toggleUnchangedButton,
+      toggleWrapButton,
+      toggleSidebarButton,
+      scopeDiffButton,
+      scopeLastCommitButton,
+      scopeAllButton,
+      scopeLabel: scopeLabel2,
+      scopeHint: scopeHint2,
+      statusBadgeClass: statusBadgeClass2,
+      statusLabel: statusLabel2,
+      getScopedFiles,
+      getFilteredFiles,
+      getRequestState,
+      isFileReviewed,
+      getCodeSearchState,
+      getActiveStatus,
+      activeFile,
+      openFile,
+      openCodeSearchMatch,
+      ensureActiveFileForScope,
+      activeFileShowsDiff
+    } = options;
+    function renderHighlightedLine(match) {
+      const raw = match.lineText.trim() || "(blank line)";
+      const trimmedOffset = match.lineText.indexOf(raw);
+      if (raw === "(blank line)") {
+        return escapeHtml(raw);
+      }
+      const start = Math.max(0, match.matchStartColumn - 1 - trimmedOffset);
+      const end = Math.max(start, match.matchEndColumn - 1 - trimmedOffset);
+      const safeStart = Math.min(start, raw.length);
+      const safeEnd = Math.min(end, raw.length);
+      return [
+        escapeHtml(raw.slice(0, safeStart)),
+        `<mark class="rounded-sm bg-[#264f78] px-0.5 text-review-text">${escapeHtml(raw.slice(safeStart, safeEnd))}</mark>`,
+        escapeHtml(raw.slice(safeEnd))
+      ].join("");
+    }
+    function getSubmittedCommentCount(fileId) {
+      return state.comments.filter((comment) => {
+        if (comment.status !== "submitted")
+          return false;
+        if (comment.resolved === true)
+          return false;
+        if (comment.scope !== state.currentScope)
+          return false;
+        if (fileId != null && comment.fileId !== fileId)
+          return false;
+        return true;
+      }).length;
+    }
+    function renderTreeNode(node, depth) {
+      const children = [...node.children.values()].sort((a, b) => {
+        if (a.kind !== b.kind)
+          return a.kind === "dir" ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      });
+      const indentPx = 12;
+      for (const child of children) {
+        if (child.kind === "dir") {
+          const collapsed = state.collapsedDirs[child.path] === true;
+          const row = document.createElement("button");
+          row.type = "button";
+          row.className = "group flex w-full items-center gap-1.5 px-2 py-1 text-left text-[13px] text-[#c9d1d9] hover:bg-[#21262d]";
+          row.style.paddingLeft = `${depth * indentPx + 8}px`;
+          row.innerHTML = `
+          <svg class="h-4 w-4 shrink-0 text-[#8b949e] transition-transform ${collapsed ? "-rotate-90" : ""}" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M12.78 6.22a.749.749 0 0 1 0 1.06l-4.25 4.25a.749.749 0 0 1-1.06 0L3.22 7.28a.749.749 0 0 1 1.06-1.06L8 9.939l3.72-3.719a.749.749 0 0 1 1.06 0Z"></path>
+          </svg>
+          <span class="truncate">${escapeHtml(child.name)}</span>
+        `;
+          row.addEventListener("click", () => {
+            state.collapsedDirs[child.path] = !collapsed;
+            renderTree();
+          });
+          fileTreeEl.appendChild(row);
+          if (!collapsed)
+            renderTreeNode(child, depth + 1);
+          continue;
+        }
+        const file = child.file;
+        if (!file)
+          continue;
+        const count = getSubmittedCommentCount(file.id);
+        const reviewed = isFileReviewed(file.id);
+        const requestState = getRequestState(file.id, state.currentScope);
+        const loading = requestState.requestId != null && requestState.contents == null;
+        const errored = requestState.error != null;
+        const status = getActiveStatus(file);
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = [
+          "group flex w-full items-center justify-between gap-2 px-2 py-1 text-left text-[13px]",
+          file.id === state.activeFileId ? "bg-[#373e47] text-white" : reviewed ? "text-[#c9d1d9] hover:bg-[#21262d]" : "text-[#8b949e] hover:bg-[#21262d] hover:text-[#c9d1d9]"
+        ].join(" ");
+        button.style.paddingLeft = `${depth * indentPx + 26}px`;
+        button.innerHTML = `
+        <span class="flex min-w-0 items-center gap-1.5 truncate ${file.id === state.activeFileId ? "font-medium" : ""}">
+          <span class="shrink-0 text-[10px] ${reviewed ? "text-[#3fb950]" : errored ? "text-red-400" : loading ? "text-[#58a6ff]" : "text-transparent"}">${reviewed ? "●" : errored ? "!" : loading ? "…" : "●"}</span>
+          <span class="truncate">${escapeHtml(child.name)}</span>
+        </span>
+        <span class="flex shrink-0 items-center gap-1.5">
+          ${count > 0 ? `<span class="flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[#1f2937] px-1 text-[10px] font-medium text-[#c9d1d9]">${count}</span>` : ""}
+          ${status ? `<span class="font-medium ${statusBadgeClass2(status)}">${statusLabel2(status).charAt(0)}</span>` : ""}
+        </span>
+      `;
+        button.addEventListener("click", () => openFile(file.id));
+        fileTreeEl.appendChild(button);
+      }
+    }
+    function renderCodeSearchResults(matches) {
+      const heading = document.createElement("div");
+      heading.className = "px-2 pb-2 pt-3 text-[11px] font-semibold uppercase tracking-wide text-review-muted";
+      heading.textContent = "Code";
+      fileTreeEl.appendChild(heading);
+      matches.forEach((match) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "group mb-2 flex w-full items-start gap-3 rounded-md border border-review-border bg-[#010409] px-3 py-3 text-left hover:bg-[#11161d]";
+        button.innerHTML = `
+        <span class="mt-0.5 shrink-0 rounded-md border border-review-border bg-review-panel px-2 py-0.5 text-[10px] font-medium text-review-muted">${match.lineNumber}</span>
+        <span class="min-w-0 flex-1">
+          <span class="block truncate text-[12px] font-medium text-review-text">${escapeHtml(match.path)}</span>
+          <span class="mt-1 block line-clamp-2 break-words text-[12px] text-review-muted">${renderHighlightedLine(match)}</span>
+        </span>
+      `;
+        button.addEventListener("click", () => openCodeSearchMatch(match));
+        fileTreeEl.appendChild(button);
+      });
+    }
+    function updateSidebarLayout() {
+      const collapsed = state.sidebarCollapsed;
+      sidebarEl.style.width = collapsed ? "0px" : "280px";
+      sidebarEl.style.minWidth = collapsed ? "0px" : "280px";
+      sidebarEl.style.flexBasis = collapsed ? "0px" : "280px";
+      sidebarEl.style.borderRightWidth = collapsed ? "0px" : "1px";
+      sidebarEl.style.pointerEvents = collapsed ? "none" : "auto";
+      toggleSidebarButton.textContent = collapsed ? "Show sidebar" : "Hide sidebar";
+    }
+    function updateScopeButtons() {
+      const counts = {
+        diff: reviewDataFiles.filter((file) => file.inGitDiff).length,
+        lastCommit: reviewDataFiles.filter((file) => file.inLastCommit).length,
+        all: reviewDataFiles.filter((file) => file.hasWorkingTreeFile).length
+      };
+      const applyButtonClasses = (button, active, disabled) => {
+        button.disabled = disabled;
+        button.className = disabled ? "cursor-default rounded-md border border-review-border bg-[#11161d] px-2.5 py-1 text-[11px] font-medium text-review-muted opacity-60" : active ? "cursor-pointer rounded-md border border-[#2ea043]/40 bg-[#238636]/15 px-2.5 py-1 text-[11px] font-medium text-[#3fb950] hover:bg-[#238636]/25" : "cursor-pointer rounded-md border border-review-border bg-review-panel px-2.5 py-1 text-[11px] font-medium text-review-text hover:bg-[#21262d]";
+      };
+      scopeDiffButton.textContent = `Git diff${counts.diff > 0 ? ` (${counts.diff})` : ""}`;
+      scopeLastCommitButton.textContent = `Last commit${counts.lastCommit > 0 ? ` (${counts.lastCommit})` : ""}`;
+      scopeAllButton.textContent = `All files${counts.all > 0 ? ` (${counts.all})` : ""}`;
+      applyButtonClasses(scopeDiffButton, state.currentScope === "git-diff", counts.diff === 0);
+      applyButtonClasses(scopeLastCommitButton, state.currentScope === "last-commit", counts.lastCommit === 0);
+      applyButtonClasses(scopeAllButton, state.currentScope === "all-files", counts.all === 0);
+    }
+    function updateToggleButtons() {
+      const file = activeFile();
+      const reviewed = file ? isFileReviewed(file.id) : false;
+      toggleReviewedButton.textContent = reviewed ? "Reviewed" : "Mark reviewed";
+      toggleReviewedButton.className = reviewed ? "cursor-pointer rounded-md border border-[#2ea043]/40 bg-[#238636]/15 px-3 py-1 text-xs font-medium text-[#3fb950] hover:bg-[#238636]/25" : "cursor-pointer rounded-md border border-review-border bg-review-panel px-3 py-1 text-xs font-medium text-review-text hover:bg-[#21262d]";
+      toggleWrapButton.textContent = `Wrap lines: ${state.wrapLines ? "on" : "off"}`;
+      toggleUnchangedButton.textContent = state.hideUnchanged ? "Show full file" : "Show changed areas only";
+      toggleUnchangedButton.style.display = activeFileShowsDiff() ? "inline-flex" : "none";
+      updateScopeButtons();
+      modeHintEl.textContent = scopeHint2(state.currentScope);
+      sidebarStatusFilterEl.value = state.statusFilter;
+      hideReviewedCheckboxEl.checked = state.hideReviewedFiles;
+      commentedOnlyCheckboxEl.checked = state.showCommentedFilesOnly;
+      changedOnlyCheckboxEl.checked = state.showChangedFilesOnly;
+      submitButton.disabled = false;
+    }
+    function renderTree() {
+      ensureActiveFileForScope();
+      fileTreeEl.innerHTML = "";
+      const scopedFiles = getScopedFiles();
+      const visibleFiles = getFilteredFiles();
+      const codeSearch = getCodeSearchState();
+      const query = state.fileFilter.trim();
+      if (visibleFiles.length === 0 && (!query || codeSearch.results.length === 0)) {
+        const message = query ? `No code matches <span class="text-review-text">${escapeHtml(state.fileFilter.trim())}</span>.` : `No files in <span class="text-review-text">${escapeHtml(scopeLabel2(state.currentScope).toLowerCase())}</span>.`;
+        fileTreeEl.innerHTML = `
+        <div class="px-3 py-4 text-sm text-review-muted">
+          ${message}
+        </div>
+      `;
+      } else if (query) {
+        if (codeSearch.searching) {
+          const loading = document.createElement("div");
+          loading.className = "px-3 py-3 text-sm text-review-muted";
+          loading.textContent = "Searching code…";
+          fileTreeEl.appendChild(loading);
+        } else if (codeSearch.results.length > 0) {
+          renderCodeSearchResults(codeSearch.results);
+        } else if (query.length >= 2) {
+          const empty = document.createElement("div");
+          empty.className = "px-3 py-3 text-sm text-review-muted";
+          empty.textContent = "No code matches found.";
+          fileTreeEl.appendChild(empty);
+        }
+      } else {
+        renderTreeNode(buildTree(visibleFiles), 0);
+      }
+      sidebarTitleEl.textContent = scopeLabel2(state.currentScope);
+      const comments = getSubmittedCommentCount();
+      const filteredSuffix = state.fileFilter.trim() ? ` • ${codeSearch.results.length} code match(es)` : "";
+      summaryEl.textContent = `${scopedFiles.length} file(s) • ${comments} comment(s)${state.overallComment ? " • overall note" : ""}${filteredSuffix}`;
+      updateToggleButtons();
+      updateSidebarLayout();
+    }
+    return {
+      renderTree,
+      updateSidebarLayout,
+      updateScopeButtons,
+      updateToggleButtons
+    };
+  }
+
+  // src/web/shared/state/review-state.ts
+  function createInitialReviewState(reviewData) {
+    return {
+      activeFileId: null,
+      currentScope: reviewData.files.some((file) => file.inGitDiff) ? "git-diff" : reviewData.files.some((file) => file.inLastCommit) ? "last-commit" : "all-files",
+      comments: [],
+      overallComment: "",
+      hideUnchanged: false,
+      wrapLines: true,
+      collapsedDirs: {},
+      reviewedFiles: {},
+      scrollPositions: {},
+      sidebarCollapsed: false,
+      fileFilter: "",
+      statusFilter: "all",
+      hideReviewedFiles: false,
+      showCommentedFilesOnly: false,
+      showChangedFilesOnly: false,
+      fileContents: {},
+      fileErrors: {},
+      pendingRequestIds: {}
+    };
+  }
+
+  // src/web/app/ui/dom.ts
+  function getReviewDomElements() {
+    return {
+      sidebarEl: document.getElementById("sidebar"),
+      sidebarTitleEl: document.getElementById("sidebar-title"),
+      sidebarSearchInputEl: document.getElementById("sidebar-search-input"),
+      sidebarStatusFilterEl: document.getElementById("sidebar-status-filter"),
+      hideReviewedCheckboxEl: document.getElementById("hide-reviewed-checkbox"),
+      commentedOnlyCheckboxEl: document.getElementById("commented-only-checkbox"),
+      changedOnlyCheckboxEl: document.getElementById("changed-only-checkbox"),
+      toggleSidebarButton: document.getElementById("toggle-sidebar-button"),
+      scopeDiffButton: document.getElementById("scope-diff-button"),
+      scopeLastCommitButton: document.getElementById("scope-last-commit-button"),
+      scopeAllButton: document.getElementById("scope-all-button"),
+      windowTitleEl: document.getElementById("window-title"),
+      repoRootEl: document.getElementById("repo-root"),
+      fileTreeEl: document.getElementById("file-tree"),
+      summaryEl: document.getElementById("summary"),
+      currentFileLabelEl: document.getElementById("current-file-label"),
+      currentSymbolLabelEl: document.getElementById("current-symbol-label"),
+      modeHintEl: document.getElementById("mode-hint"),
+      fileCommentsContainer: document.getElementById("file-comments-container"),
+      editorContainerEl: document.getElementById("editor-container"),
+      inspectorEl: document.getElementById("inspector"),
+      outlineContainerEl: document.getElementById("outline-container"),
+      reviewQueueContainerEl: document.getElementById("review-queue-container"),
+      changedSymbolsButton: document.getElementById("changed-symbols-button"),
+      agentActionButton: document.getElementById("agent-action-button"),
+      submitButton: document.getElementById("submit-button"),
+      cancelButton: document.getElementById("cancel-button"),
+      overallCommentButton: document.getElementById("overall-comment-button"),
+      fileCommentButton: document.getElementById("file-comment-button"),
+      navigateBackButton: document.getElementById("navigate-back-button"),
+      navigateForwardButton: document.getElementById("navigate-forward-button"),
+      showReferencesButton: document.getElementById("show-references-button"),
+      peekDefinitionButton: document.getElementById("peek-definition-button"),
+      toggleReviewedButton: document.getElementById("toggle-reviewed-button"),
+      toggleUnchangedButton: document.getElementById("toggle-unchanged-button"),
+      toggleWrapButton: document.getElementById("toggle-wrap-button")
+    };
   }
 
   // src/web/features/comments/comment-manager.ts
@@ -720,57 +1766,6 @@
     };
   }
 
-  // src/web/features/symbols/symbol-context.ts
-  function getReviewSymbolContext(content, lineNumber, languageId) {
-    const lines = content.split(/\r?\n/);
-    const maxIndex = Math.min(Math.max(lineNumber - 1, 0), lines.length - 1);
-    for (let index = maxIndex;index >= 0; index -= 1) {
-      const line = lines[index] || "";
-      const title = matchSymbolLine(line, languageId);
-      if (title) {
-        return { title, lineNumber: index + 1 };
-      }
-    }
-    return { title: null, lineNumber: null };
-  }
-  function buildPreviewSnippet(content, lineNumber, contextRadius = 3) {
-    const lines = content.split(/\r?\n/);
-    if (lines.length === 0)
-      return "";
-    const targetIndex = Math.min(Math.max(lineNumber - 1, 0), lines.length - 1);
-    const start = Math.max(0, targetIndex - contextRadius);
-    const end = Math.min(lines.length - 1, targetIndex + contextRadius);
-    return lines.slice(start, end + 1).map((line, offset) => {
-      const currentLine = start + offset + 1;
-      const prefix = currentLine === targetIndex + 1 ? ">" : " ";
-      return `${prefix} ${String(currentLine).padStart(4, " ")} ${line}`;
-    }).join(`
-`);
-  }
-  function matchSymbolLine(line, languageId) {
-    const trimmed = line.trim();
-    if (!trimmed)
-      return null;
-    switch (languageId) {
-      case "typescript":
-      case "javascript":
-        return capture(trimmed, /^(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/) || capture(trimmed, /^(?:export\s+)?class\s+([A-Za-z_$][\w$]*)/) || capture(trimmed, /^(?:export\s+)?interface\s+([A-Za-z_$][\w$]*)/) || capture(trimmed, /^(?:export\s+)?type\s+([A-Za-z_$][\w$]*)/) || capture(trimmed, /^(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?\(/) || capture(trimmed, /^(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?[A-Za-z_$][\w$]*\s*=>/) || capture(trimmed, /^([A-Za-z_$][\w$]*)\s*\(/);
-      case "go":
-        return capture(trimmed, /^func\s+(?:\([^)]*\)\s*)?([A-Za-z_][\w]*)/) || capture(trimmed, /^type\s+([A-Za-z_][\w]*)\s+(?:struct|interface)/) || capture(trimmed, /^var\s+([A-Za-z_][\w]*)/) || capture(trimmed, /^const\s+([A-Za-z_][\w]*)/);
-      case "rust":
-        return capture(trimmed, /^(?:pub\s+)?fn\s+([A-Za-z_][\w]*)/) || capture(trimmed, /^impl\s+([A-Za-z_][\w]*)/) || capture(trimmed, /^(?:pub\s+)?(?:struct|enum|trait|mod)\s+([A-Za-z_][\w]*)/);
-      case "c":
-      case "cpp":
-        return capture(trimmed, /^(?:class|struct|enum)\s+([A-Za-z_][\w]*)/) || capture(trimmed, /^(?:static\s+)?(?:inline\s+)?[A-Za-z_][\w:\s*&<>]*\s+([A-Za-z_][\w]*)\s*\([^;]*\)\s*(?:\{|$)/);
-      default:
-        return null;
-    }
-  }
-  function capture(value, pattern) {
-    const match = value.match(pattern);
-    return match?.[1] || null;
-  }
-
   // src/web/features/editor/review-editor.ts
   function scrollKey(scope, fileId) {
     return `${scope}:${fileId}`;
@@ -803,6 +1798,7 @@
       renderFileComments,
       canCommentOnSide,
       resolveNavigationTarget,
+      resolveDefinitionTarget,
       describeNavigationTarget,
       openNavigationTarget,
       navigationResolver,
@@ -1040,16 +2036,40 @@ ${requestState.error}`;
         column: context.column
       };
     }
-    function emitEditorContextChange() {
+    function emitEditorContextChange(symbolLineOverride) {
       const navigationRequest = getCurrentNavigationRequest();
       const navigationTarget = navigationRequest != null ? resolveNavigationTarget(navigationRequest) : null;
-      const symbolContext = navigationRequest != null ? getReviewSymbolContext(navigationRequest.content, navigationRequest.lineNumber, navigationRequest.languageId) : { title: null, lineNumber: null };
+      const symbolLine = symbolLineOverride ?? navigationRequest?.lineNumber ?? null;
+      const symbolContext = navigationRequest != null && symbolLine != null ? getReviewSymbolContext(navigationRequest.content, symbolLine, navigationRequest.languageId) : { title: null, lineNumber: null };
       onEditorContextChange({
         navigationRequest,
         navigationTarget,
         symbolTitle: symbolContext.title,
         symbolLine: symbolContext.lineNumber
       });
+    }
+    function getCurrentSelectionContext() {
+      const context = getCurrentEditorContext();
+      if (!context)
+        return null;
+      const descriptor = navigationResolver.parseModelUri(context.model.uri);
+      if (!descriptor)
+        return null;
+      const selection = context.editor?.getSelection?.();
+      const startLine = Math.max(1, selection?.startLineNumber ?? context.line);
+      const endLine = Math.max(1, selection?.endLineNumber ?? startLine);
+      const selectedText = typeof context.editor?.getModel?.()?.getValueInRange === "function" && selection ? String(context.editor.getModel().getValueInRange(selection) || "") : "";
+      return {
+        fileId: descriptor.fileId,
+        scope: descriptor.scope,
+        side: descriptor.side,
+        sourcePath: descriptor.sourcePath,
+        languageId: context.model.getLanguageId?.() || inferLanguage(descriptor.sourcePath),
+        content: context.model.getValue(),
+        startLine,
+        endLine,
+        selectedText
+      };
     }
     function maybeRevealPendingNavigation() {
       if (!pendingNavigationTarget || !diffEditor)
@@ -1214,11 +2234,13 @@ ${requestState.error}`;
           };
         };
         monacoApi.languages.registerDefinitionProvider(languageId, {
-          provideDefinition(model, position) {
+          async provideDefinition(model, position, token) {
             const request = buildRequest(model, position);
             if (!request)
               return null;
-            const target = resolveNavigationTarget(request);
+            const target = await resolveDefinitionTarget(request);
+            if (token?.isCancellationRequested)
+              return null;
             if (!target)
               return null;
             return {
@@ -1228,13 +2250,17 @@ ${requestState.error}`;
           }
         });
         monacoApi.languages.registerHoverProvider(languageId, {
-          provideHover(model, position) {
+          async provideHover(model, position, token) {
             const request = buildRequest(model, position);
             if (!request)
               return null;
-            const target = resolveNavigationTarget(request);
+            const target = resolveNavigationTarget(request) ?? await resolveDefinitionTarget(request);
+            if (token?.isCancellationRequested)
+              return null;
             if (!target)
               return null;
+            const actionLabel = navigationActionLabel(request.languageId);
+            const referencesLabel = supportsSemanticDefinition(request.languageId) ? "show related usages" : "show related imports/usages";
             return {
               range: new monacoApi.Range(position.lineNumber, position.column, position.lineNumber, position.column),
               contents: [
@@ -1243,8 +2269,8 @@ ${requestState.error}`;
 
 Target: \`${describeNavigationTarget(target)}\`
 
-- Cmd/Ctrl-click: open definition
-- References button: show related imports/usages
+- Cmd/Ctrl-click: ${actionLabel}
+- References button: ${referencesLabel}
 - Peek button: preview target inline`
                 }
               ]
@@ -1276,6 +2302,9 @@ Target: \`${describeNavigationTarget(target)}\`
         }
       });
       monacoRequire(["vs/editor/editor.main"], () => {
+        if (!window.monaco) {
+          return;
+        }
         monacoApi = window.monaco;
         monacoApi.editor.defineTheme("review-dark", {
           base: "vs-dark",
@@ -1327,6 +2356,16 @@ Target: \`${describeNavigationTarget(target)}\`
           lastFocusedSide = "modified";
           emitEditorContextChange();
         });
+        diffEditor.getOriginalEditor().onDidScrollChange(() => {
+          lastFocusedSide = "original";
+          const line = diffEditor?.getOriginalEditor().getVisibleRanges?.()?.[0]?.startLineNumber;
+          emitEditorContextChange(line);
+        });
+        diffEditor.getModifiedEditor().onDidScrollChange(() => {
+          lastFocusedSide = "modified";
+          const line = diffEditor?.getModifiedEditor().getVisibleRanges?.()?.[0]?.startLineNumber;
+          emitEditorContextChange(line);
+        });
         registerNavigationSupport();
         if (typeof ResizeObserver !== "undefined") {
           editorResizeObserver = new ResizeObserver(() => {
@@ -1356,7 +2395,8 @@ Target: \`${describeNavigationTarget(target)}\`
       isActiveFileReady,
       revealNavigationTarget,
       getCurrentNavigationTarget,
-      getCurrentNavigationRequest
+      getCurrentNavigationRequest,
+      getCurrentSelectionContext
     };
   }
 
@@ -1364,6 +2404,7 @@ Target: \`${describeNavigationTarget(target)}\`
   var REVIEW_MODEL_SCHEME = "review-model";
   var REVIEW_TARGET_SCHEME = "review-target";
   var TS_LIKE_EXTENSIONS = [
+    ".d.ts",
     ".ts",
     ".tsx",
     ".mts",
@@ -1582,6 +2623,7 @@ Target: \`${describeNavigationTarget(target)}\`
     const lines = file.content.split(/\r?\n/);
     const patterns = [
       /\bfrom\s+(["'])([^"']+)\1/g,
+      /\bexport\s+(?:type\s+)?(?:\*|\*\s+as\s+[A-Za-z_$][\w$]*|\{[^}]+\})\s+from\s+(["'])([^"']+)\1/g,
       /\bimport\s*\(\s*(["'])([^"']+)\1/g,
       /\brequire\s*\(\s*(["'])([^"']+)\1/g,
       /^\s*import\s+(["'])([^"']+)\1/g
@@ -1952,7 +2994,7 @@ Target: \`${describeNavigationTarget(target)}\`
     return value === "original" || value === "modified";
   }
 
-  // src/web/app/runtime.ts
+  // src/web/app/runtime/controller.ts
   function createReviewRuntimeController(options) {
     const {
       dom: {
@@ -1971,7 +3013,13 @@ Target: \`${describeNavigationTarget(target)}\`
         scopeDiffButton,
         scopeLastCommitButton,
         scopeAllButton,
-        sidebarSearchInputEl
+        sidebarSearchInputEl,
+        sidebarStatusFilterEl,
+        hideReviewedCheckboxEl,
+        commentedOnlyCheckboxEl,
+        changedOnlyCheckboxEl,
+        changedSymbolsButton,
+        agentActionButton
       },
       events: {
         onSubmit,
@@ -1990,9 +3038,23 @@ Target: \`${describeNavigationTarget(target)}\`
         onScopeLastCommit,
         onScopeAll,
         onSidebarSearchInput,
-        onSidebarSearchClear
+        onSidebarSearchClear,
+        onStatusFilterChange,
+        onHideReviewedChange,
+        onCommentedOnlyChange,
+        onChangedOnlyChange,
+        onShowChangedSymbols,
+        onAgentAction
       },
-      messages: { onFileData, onFileError }
+      messages: {
+        onFileData,
+        onFileError,
+        onDefinitionData,
+        onDefinitionError,
+        onReferencesData,
+        onReferencesError,
+        onSubmitAck
+      }
     } = options;
     function handleHostMessage(message) {
       if (!message || typeof message !== "object")
@@ -2003,6 +3065,26 @@ Target: \`${describeNavigationTarget(target)}\`
       }
       if (message.type === "file-error") {
         onFileError(message);
+        return;
+      }
+      if (message.type === "definition-data") {
+        onDefinitionData(message);
+        return;
+      }
+      if (message.type === "definition-error") {
+        onDefinitionError(message);
+        return;
+      }
+      if (message.type === "references-data") {
+        onReferencesData(message);
+        return;
+      }
+      if (message.type === "references-error") {
+        onReferencesError(message);
+        return;
+      }
+      if (message.type === "submit-ack") {
+        onSubmitAck(message);
       }
     }
     function bind() {
@@ -2030,6 +3112,20 @@ Target: \`${describeNavigationTarget(target)}\`
           onSidebarSearchClear();
         }
       });
+      sidebarStatusFilterEl.addEventListener("change", () => {
+        onStatusFilterChange(sidebarStatusFilterEl.value);
+      });
+      hideReviewedCheckboxEl.addEventListener("change", () => {
+        onHideReviewedChange(hideReviewedCheckboxEl.checked);
+      });
+      commentedOnlyCheckboxEl.addEventListener("change", () => {
+        onCommentedOnlyChange(commentedOnlyCheckboxEl.checked);
+      });
+      changedOnlyCheckboxEl.addEventListener("change", () => {
+        onChangedOnlyChange(changedOnlyCheckboxEl.checked);
+      });
+      changedSymbolsButton.addEventListener("click", onShowChangedSymbols);
+      agentActionButton.addEventListener("click", onAgentAction);
       window.__reviewReceive = handleHostMessage;
     }
     return {
@@ -2046,6 +3142,10 @@ Target: \`${describeNavigationTarget(target)}\`
     sidebarEl,
     sidebarTitleEl,
     sidebarSearchInputEl,
+    sidebarStatusFilterEl,
+    hideReviewedCheckboxEl,
+    commentedOnlyCheckboxEl,
+    changedOnlyCheckboxEl,
     toggleSidebarButton,
     scopeDiffButton,
     scopeLastCommitButton,
@@ -2059,6 +3159,10 @@ Target: \`${describeNavigationTarget(target)}\`
     modeHintEl,
     fileCommentsContainer,
     editorContainerEl,
+    outlineContainerEl,
+    reviewQueueContainerEl,
+    changedSymbolsButton,
+    agentActionButton,
     submitButton,
     cancelButton,
     overallCommentButton,
@@ -2078,84 +3182,55 @@ Target: \`${describeNavigationTarget(target)}\`
   var commentManager = null;
   var editorController = null;
   var pendingFileWaiters = new Map;
+  var pendingDefinitionWaiters = new Map;
+  var pendingReferencesWaiters = new Map;
   var navigationBackStack = [];
   var navigationForwardStack = [];
   var isHistoryNavigation = false;
   var currentNavigationRequestAvailable = false;
+  var summaryFlashTimeout = null;
+  var pendingSubmitRequestId = null;
+  var inspectorController = null;
+  var commandPaletteController = null;
+  var fileModel = createReviewFileModel({
+    reviewDataFiles: reviewData.files,
+    state,
+    isFileReviewed: (fileId) => state.reviewedFiles[fileId] === true,
+    isCommentResolved
+  });
   function isFileReviewed(fileId) {
     return state.reviewedFiles[fileId] === true;
   }
-  function getScopedFiles() {
-    switch (state.currentScope) {
-      case "git-diff":
-        return reviewData.files.filter((file) => file.inGitDiff);
-      case "last-commit":
-        return reviewData.files.filter((file) => file.inLastCommit);
-      default:
-        return reviewData.files.filter((file) => file.hasWorkingTreeFile);
+  function flashSummary(message) {
+    if (summaryFlashTimeout != null) {
+      window.clearTimeout(summaryFlashTimeout);
     }
+    const previous = summaryEl.textContent || "";
+    summaryEl.textContent = message;
+    summaryFlashTimeout = window.setTimeout(() => {
+      summaryFlashTimeout = null;
+      sidebarController?.renderTree();
+      if (!summaryEl.textContent) {
+        summaryEl.textContent = previous;
+      }
+    }, 1800);
   }
-  function ensureActiveFileForScope() {
-    const scopedFiles = getScopedFiles();
-    if (scopedFiles.length === 0) {
-      state.activeFileId = null;
-      return;
-    }
-    if (scopedFiles.some((file) => file.id === state.activeFileId)) {
-      return;
-    }
-    state.activeFileId = scopedFiles[0].id;
+  function setSubmitPendingState(isPending) {
+    submitButton.disabled = isPending;
+    cancelButton.disabled = isPending;
+    submitButton.textContent = isPending ? "Submitting…" : "Finish review";
   }
-  function activeFile() {
-    return reviewData.files.find((file) => file.id === state.activeFileId) ?? null;
-  }
-  function getScopeComparison(file, scope = state.currentScope) {
-    if (!file)
-      return null;
-    if (scope === "git-diff")
-      return file.gitDiff;
-    if (scope === "last-commit")
-      return file.lastCommit;
-    return null;
-  }
-  function activeComparison() {
-    return getScopeComparison(activeFile(), state.currentScope);
-  }
-  function activeFileShowsDiff() {
-    return activeComparison() != null;
-  }
-  function getScopeFilePath(file) {
-    const comparison = getScopeComparison(file, state.currentScope);
-    return comparison?.newPath || comparison?.oldPath || file?.path || "";
-  }
-  function getScopeDisplayPath(file, scope = state.currentScope) {
-    const comparison = getScopeComparison(file, scope);
-    return comparison?.displayPath || file?.path || "";
-  }
-  function getScopeSidePath(file, scope, side) {
-    const comparison = getScopeComparison(file, scope);
-    if (!comparison)
-      return file?.path || "";
-    if (side === "original") {
-      return comparison.oldPath || comparison.newPath || file?.path || "";
-    }
-    return comparison.newPath || comparison.oldPath || file?.path || "";
-  }
-  function getActiveStatus(file) {
-    const comparison = getScopeComparison(file, state.currentScope);
-    return comparison?.status ?? file?.worktreeStatus ?? null;
-  }
-  function getFilteredFiles() {
-    const scopedFiles = getScopedFiles();
-    const query = state.fileFilter.trim();
-    if (!query)
-      return [...scopedFiles];
-    return scopedFiles.map((file) => ({ file, score: getFileSearchScore(query, file) })).filter((entry) => entry.score >= 0).sort((a, b) => {
-      if (b.score !== a.score)
-        return b.score - a.score;
-      return getFileSearchPath(a.file).localeCompare(getFileSearchPath(b.file));
-    }).map((entry) => entry.file);
-  }
+  var getScopedFiles = fileModel.getScopedFiles;
+  var ensureActiveFileForScope = fileModel.ensureActiveFileForScope;
+  var activeFile = fileModel.activeFile;
+  var getScopeComparison = fileModel.getScopeComparison;
+  var activeComparison = fileModel.activeComparison;
+  var activeFileShowsDiff = fileModel.activeFileShowsDiff;
+  var getScopeFilePath = fileModel.getScopeFilePath;
+  var getScopeDisplayPath = fileModel.getScopeDisplayPath;
+  var getScopeSidePath = fileModel.getScopeSidePath;
+  var getActiveStatus = fileModel.getActiveStatus;
+  var getFilteredFiles = fileModel.getFilteredFiles;
   function cacheKey(scope, fileId) {
     return `${scope}:${fileId}`;
   }
@@ -2173,7 +3248,7 @@ Target: \`${describeNavigationTarget(target)}\`
     pendingFileWaiters.delete(key);
     waiters.forEach((waiter) => waiter.resolve(value));
   }
-  function rejectPendingFileWaiters(fileId, scope, reason) {
+  function rejectPendingFileWaiters(fileId, scope) {
     const key = cacheKey(scope, fileId);
     const waiters = pendingFileWaiters.get(key) ?? [];
     pendingFileWaiters.delete(key);
@@ -2212,13 +3287,140 @@ Target: \`${describeNavigationTarget(target)}\`
       window.glimpse.send({ type: "request-file", requestId, fileId, scope });
     }
   }
+  var codeSearchController = createReviewCodeSearchController({
+    scope: () => state.currentScope,
+    getScopedFiles,
+    getScopeComparison,
+    getScopeSidePath,
+    loadFileContents,
+    onStateChange: () => {
+      sidebarController?.renderTree();
+    }
+  });
+  function getCodeSearchState() {
+    return codeSearchController.getState();
+  }
+  function clearCodeSearch() {
+    codeSearchController.clear();
+  }
+  function scheduleCodeSearch(query) {
+    codeSearchController.schedule(query);
+  }
+  function resolvePendingDefinitionWaiters(requestId, value) {
+    const waiters = pendingDefinitionWaiters.get(requestId) ?? [];
+    pendingDefinitionWaiters.delete(requestId);
+    waiters.forEach((waiter) => waiter.resolve(value));
+  }
+  function rejectPendingDefinitionWaiters(requestId, reason) {
+    const waiters = pendingDefinitionWaiters.get(requestId) ?? [];
+    pendingDefinitionWaiters.delete(requestId);
+    waiters.forEach((waiter) => waiter.reject(reason));
+  }
+  function requestDefinitionTarget(request) {
+    if (!window.glimpse?.send) {
+      return Promise.resolve(null);
+    }
+    const requestId = `definition:${Date.now()}:${++requestSequence}`;
+    const payload = {
+      type: "request-definition",
+      requestId,
+      request
+    };
+    window.glimpse.send(payload);
+    return new Promise((resolve, reject) => {
+      const waiters = pendingDefinitionWaiters.get(requestId) ?? [];
+      waiters.push({ resolve, reject });
+      pendingDefinitionWaiters.set(requestId, waiters);
+    });
+  }
+  function resolvePendingReferencesWaiters(requestId, value) {
+    const waiters = pendingReferencesWaiters.get(requestId) ?? [];
+    pendingReferencesWaiters.delete(requestId);
+    waiters.forEach((waiter) => waiter.resolve(value));
+  }
+  function rejectPendingReferencesWaiters(requestId, reason) {
+    const waiters = pendingReferencesWaiters.get(requestId) ?? [];
+    pendingReferencesWaiters.delete(requestId);
+    waiters.forEach((waiter) => waiter.reject(reason));
+  }
+  function requestReferenceTargets(request) {
+    if (!window.glimpse?.send) {
+      return Promise.resolve([]);
+    }
+    const requestId = `references:${Date.now()}:${++requestSequence}`;
+    const payload = {
+      type: "request-references",
+      requestId,
+      request
+    };
+    window.glimpse.send(payload);
+    return new Promise((resolve, reject) => {
+      const waiters = pendingReferencesWaiters.get(requestId) ?? [];
+      waiters.push({ resolve, reject });
+      pendingReferencesWaiters.set(requestId, waiters);
+    });
+  }
+  async function resolveDefinitionTarget(request) {
+    const semanticTarget = supportsSemanticDefinition(request.languageId) ? await requestDefinitionTarget(request).catch(() => null) : null;
+    return semanticTarget ?? navigationResolver.resolveTarget(request);
+  }
   function getCurrentNavigationTarget() {
     return editorController?.getCurrentNavigationTarget() ?? null;
   }
-  function sameNavigationTarget(left, right) {
-    if (!left || !right)
+  function getCurrentSelectionContext() {
+    return editorController?.getCurrentSelectionContext() ?? null;
+  }
+  function getLoadedAnchorText(fileId, scope, side, lineNumber) {
+    const key = cacheKey(scope, fileId);
+    const contents = state.fileContents[key];
+    if (!contents)
+      return null;
+    const content = side === "original" ? contents.originalContent : contents.modifiedContent;
+    return content.split(/\r?\n/)[lineNumber - 1]?.trim() ?? null;
+  }
+  function getLoadedCommentAnchorText(comment) {
+    if (comment.startLine == null || comment.side === "file")
+      return null;
+    return getLoadedAnchorText(comment.fileId, comment.scope, comment.side, comment.startLine);
+  }
+  function isCommentAnchorStale(comment) {
+    if (!comment.anchorText || comment.startLine == null || comment.side === "file") {
       return false;
-    return left.fileId === right.fileId && left.scope === right.scope && left.side === right.side && left.line === right.line && left.column === right.column;
+    }
+    const currentLine = getLoadedCommentAnchorText(comment);
+    return currentLine != null && currentLine !== comment.anchorText.trim();
+  }
+  function getActiveLocationLabel() {
+    const file = activeFile();
+    const target = getCurrentNavigationTarget();
+    if (!file || !target)
+      return null;
+    const path = target.scope === "all-files" ? file.path : getScopeSidePath(file, target.scope, target.side) || file.path;
+    const sideSuffix = target.scope === "all-files" ? "" : target.side === "original" ? " (old)" : " (new)";
+    return `${path}:${target.line}:${target.column}${sideSuffix}`;
+  }
+  function getSelectionReference() {
+    const selection = getCurrentSelectionContext();
+    const file = activeFile();
+    if (!selection || !file)
+      return null;
+    const path = selection.scope === "all-files" ? file.path : getScopeSidePath(file, selection.scope, selection.side) || file.path;
+    const range = selection.startLine === selection.endLine ? `${selection.startLine}` : `${selection.startLine}-${selection.endLine}`;
+    const sideSuffix = selection.scope === "all-files" ? "" : selection.side === "original" ? " (old)" : " (new)";
+    return `${path}:${range}${sideSuffix}`;
+  }
+  function navigateUnresolvedComment(direction) {
+    if (!inspectorController?.navigateUnresolvedComment(direction)) {
+      flashSummary("No unresolved comments in this scope");
+      return;
+    }
+    flashSummary(direction === "next" ? "Jumped to next unresolved comment" : "Jumped to previous unresolved comment");
+  }
+  function renderReviewQueue() {
+    inspectorController?.renderReviewQueue();
+  }
+  async function renderOutline() {
+    await inspectorController?.renderOutline();
   }
   function updateNavigationButtons() {
     navigateBackButton.disabled = navigationBackStack.length === 0;
@@ -2227,9 +3429,10 @@ Target: \`${describeNavigationTarget(target)}\`
     peekDefinitionButton.disabled = !currentNavigationRequestAvailable;
   }
   function updateEditorContextUI(context) {
-    currentNavigationRequestAvailable = context.navigationTarget != null;
+    currentNavigationRequestAvailable = context.navigationRequest != null;
     currentSymbolLabelEl.textContent = context.symbolTitle ? `Symbol: ${context.symbolTitle}${context.symbolLine ? ` · line ${context.symbolLine}` : ""}` : "";
     updateNavigationButtons();
+    renderOutline();
   }
   function recordNavigationCheckpoint() {
     if (isHistoryNavigation)
@@ -2241,7 +3444,7 @@ Target: \`${describeNavigationTarget(target)}\`
     if (!sameNavigationTarget(previous, current)) {
       navigationBackStack.push(current);
     }
-    navigationForwardStack = [];
+    navigationForwardStack.length = 0;
     updateNavigationButtons();
   }
   function describeNavigationTarget(target) {
@@ -2292,19 +3495,19 @@ Target: \`${describeNavigationTarget(target)}\`
     if (!request) {
       showReferenceModal({
         title: "References",
-        description: "Select a repo-local import or module path first.",
+        description: "Select a repo-local symbol, import, or module path first.",
         items: [],
         emptyLabel: "No active navigation target is available at the current cursor."
       });
       return;
     }
-    const target = navigationResolver.resolveTarget(request);
+    const target = await resolveDefinitionTarget(request);
     if (!target) {
       showReferenceModal({
         title: "References",
-        description: "This selection does not resolve to a repo-local review target.",
+        description: "This selection does not resolve to a repo-local navigation target.",
         items: [],
-        emptyLabel: "No repo-local references available for the current selection."
+        emptyLabel: "No repo-local references are available for the current selection."
       });
       return;
     }
@@ -2312,22 +3515,41 @@ Target: \`${describeNavigationTarget(target)}\`
     const previousLabel = showReferencesButton.textContent || "References";
     showReferencesButton.textContent = "Searching…";
     try {
-      const searchableFiles = reviewData.files.filter((file) => file.hasWorkingTreeFile);
-      const loadedFiles = await Promise.all(searchableFiles.map(async (file) => ({
-        file,
-        contents: await loadFileContents(file.id, "all-files")
-      })));
-      const matches = navigationResolver.findReferences(request, loadedFiles.filter((item) => item.contents != null).map((item) => {
-        const target2 = getReferenceSearchTarget(item.file);
-        return {
-          fileId: item.file.id,
-          scope: target2.scope,
-          side: target2.side,
-          sourcePath: item.file.path,
-          languageId: inferLanguage(item.file.path),
-          content: item.contents?.modifiedContent || ""
-        };
-      })).sort((a, b) => sortReferenceTargets(a.target, b.target));
+      let matches;
+      if (supportsSemanticDefinition(request.languageId)) {
+        const semanticTargets = await requestReferenceTargets(request).catch(() => []) ?? [];
+        const semanticItems = await Promise.all(semanticTargets.map(async (target2) => {
+          const file = reviewData.files.find((item) => item.id === target2.fileId);
+          const contents = await loadFileContents(target2.fileId, target2.scope);
+          const content = target2.side === "original" ? contents?.originalContent ?? "" : contents?.modifiedContent ?? "";
+          const lineText = content.split(/\r?\n/)[target2.line - 1] ?? "";
+          return {
+            target: target2,
+            lineNumber: target2.line,
+            column: target2.column,
+            sourcePath: getScopeDisplayPath(file ?? null, target2.scope),
+            lineText
+          };
+        }));
+        matches = semanticItems.sort((a, b) => sortReferenceTargets(a.target, b.target));
+      } else {
+        const searchableFiles = reviewData.files.filter((file) => file.hasWorkingTreeFile);
+        const loadedFiles = await Promise.all(searchableFiles.map(async (file) => ({
+          file,
+          contents: await loadFileContents(file.id, "all-files")
+        })));
+        matches = navigationResolver.findReferences(request, loadedFiles.filter((item) => item.contents != null).map((item) => {
+          const target2 = getReferenceSearchTarget(item.file);
+          return {
+            fileId: item.file.id,
+            scope: target2.scope,
+            side: target2.side,
+            sourcePath: item.file.path,
+            languageId: inferLanguage(item.file.path),
+            content: item.contents?.modifiedContent || ""
+          };
+        })).sort((a, b) => sortReferenceTargets(a.target, b.target));
+      }
       showReferenceModal({
         title: `References for ${describeNavigationTarget(target)}`,
         description: "Use the modal filters to focus on changed files or the current review scope.",
@@ -2360,7 +3582,7 @@ Target: \`${describeNavigationTarget(target)}\`
     const request = getCurrentNavigationRequest();
     if (!request)
       return;
-    const target = navigationResolver.resolveTarget(request);
+    const target = await resolveDefinitionTarget(request);
     if (!target)
       return;
     peekDefinitionButton.disabled = true;
@@ -2418,6 +3640,9 @@ Target: \`${describeNavigationTarget(target)}\`
     editorController?.revealNavigationTarget(target);
     updateNavigationButtons();
   }
+  function openCodeSearchMatch(match) {
+    openNavigationTarget(match.target);
+  }
   sidebarController = createSidebarController({
     reviewDataFiles: reviewData.files,
     state,
@@ -2426,6 +3651,10 @@ Target: \`${describeNavigationTarget(target)}\`
     fileTreeEl,
     summaryEl,
     modeHintEl,
+    sidebarStatusFilterEl,
+    hideReviewedCheckboxEl,
+    commentedOnlyCheckboxEl,
+    changedOnlyCheckboxEl,
     submitButton,
     toggleReviewedButton,
     toggleUnchangedButton,
@@ -2442,9 +3671,11 @@ Target: \`${describeNavigationTarget(target)}\`
     getFilteredFiles,
     getRequestState,
     isFileReviewed,
+    getCodeSearchState,
     getActiveStatus,
     activeFile,
     openFile,
+    openCodeSearchMatch,
     ensureActiveFileForScope,
     activeFileShowsDiff
   });
@@ -2456,8 +3687,7 @@ Target: \`${describeNavigationTarget(target)}\`
     onCommentsChange: updateCommentsUI
   });
   function addInlineComment(fileId, side, line) {
-    state.comments.push({
-      id: `${Date.now()}:${Math.random().toString(16).slice(2)}`,
+    state.comments.push(createComment({
       fileId,
       scope: state.currentScope,
       side,
@@ -2465,8 +3695,10 @@ Target: \`${describeNavigationTarget(target)}\`
       endLine: line,
       body: "",
       status: "draft",
-      collapsed: false
-    });
+      collapsed: false,
+      anchorPath: getScopeSidePath(activeFile(), state.currentScope, side),
+      anchorText: getLoadedAnchorText(fileId, state.currentScope, side, line) ?? undefined
+    }));
   }
   editorController = createReviewEditor({
     state,
@@ -2488,6 +3720,7 @@ Target: \`${describeNavigationTarget(target)}\`
     },
     canCommentOnSide,
     resolveNavigationTarget: (request) => navigationResolver.resolveTarget(request),
+    resolveDefinitionTarget,
     describeNavigationTarget,
     openNavigationTarget,
     navigationResolver,
@@ -2518,8 +3751,7 @@ Target: \`${describeNavigationTarget(target)}\`
       onSave: (value) => {
         if (!value)
           return;
-        state.comments.push({
-          id: `${Date.now()}:${Math.random().toString(16).slice(2)}`,
+        state.comments.push(createComment({
           fileId: file.id,
           scope: state.currentScope,
           side: "file",
@@ -2527,12 +3759,161 @@ Target: \`${describeNavigationTarget(target)}\`
           endLine: null,
           body: value,
           status: "submitted",
-          collapsed: false
-        });
+          collapsed: false,
+          anchorPath: getScopeDisplayPath(file, state.currentScope)
+        }));
         submitButton.disabled = false;
         updateCommentsUI();
       }
     });
+  }
+  async function handleShowChangedSymbols() {
+    changedSymbolsButton.disabled = true;
+    const previousLabel = changedSymbolsButton.textContent || "Changed symbols";
+    changedSymbolsButton.textContent = "Loading…";
+    try {
+      const changedFiles = reviewData.files.filter((file) => file.inGitDiff || file.inLastCommit || file.worktreeStatus != null);
+      const items = (await Promise.all(changedFiles.map(async (file) => {
+        const contents = await loadFileContents(file.id, "all-files");
+        const content = contents?.modifiedContent ?? contents?.originalContent ?? "";
+        const languageId = inferLanguage(file.path);
+        return extractReviewSymbols(content, languageId).map((symbol) => ({
+          file,
+          symbol
+        }));
+      }))).flat().sort((left, right) => {
+        if (left.file.path !== right.file.path) {
+          return left.file.path.localeCompare(right.file.path);
+        }
+        return left.symbol.lineNumber - right.symbol.lineNumber;
+      });
+      showSymbolModal({
+        title: "Changed symbols",
+        description: "Jump to the meaningful parts of the current local change set.",
+        items: items.map(({ file, symbol }) => ({
+          title: symbol.title,
+          kind: symbol.kind,
+          description: `${file.path} · line ${symbol.lineNumber}`,
+          onSelect: () => {
+            openNavigationTarget({
+              fileId: file.id,
+              scope: file.inGitDiff ? "git-diff" : file.inLastCommit ? "last-commit" : "all-files",
+              side: file.gitDiff?.hasModified || file.lastCommit?.hasModified || file.hasWorkingTreeFile ? "modified" : "original",
+              line: symbol.lineNumber,
+              column: 1
+            });
+          }
+        }))
+      });
+    } finally {
+      changedSymbolsButton.disabled = false;
+      changedSymbolsButton.textContent = previousLabel;
+    }
+  }
+  function buildAgentActionComment(kind, body, selection, useSelection) {
+    const file = activeFile();
+    if (!file)
+      return;
+    state.comments.push(createComment({
+      fileId: file.id,
+      scope: state.currentScope,
+      side: useSelection ? selection?.side ?? "modified" : "file",
+      startLine: useSelection ? selection?.startLine ?? null : null,
+      endLine: useSelection ? selection?.endLine ?? null : null,
+      body,
+      status: "submitted",
+      collapsed: false,
+      kind,
+      anchorPath: getScopeDisplayPath(file, state.currentScope),
+      anchorText: useSelection ? selection?.selectedText.trim().split(/\r?\n/)[0] : undefined
+    }));
+    updateCommentsUI();
+  }
+  function handleAgentAction() {
+    const selection = getCurrentSelectionContext();
+    const hasSelection = Boolean(selection?.selectedText.trim());
+    const contextDescription = hasSelection ? `Selected lines ${selection?.startLine}-${selection?.endLine}` : activeFile() ? `Current file ${getScopeDisplayPath(activeFile(), state.currentScope)}` : "Current review context";
+    showActionModal({
+      title: "Ask agent about this review context",
+      description: `${contextDescription}. These prompts will be added to the review queue and included in the final handoff.`,
+      actions: [
+        {
+          label: "Explain this code",
+          description: "Ask for a plain-language walkthrough of the selected code or current file context.",
+          onSelect: () => {
+            buildAgentActionComment("explain", hasSelection ? "Explain what this selected code does, which surrounding state or control flow it depends on, and any non-obvious details I should understand before approving it." : "Explain the current file changes in plain language, focusing on the intent and any non-obvious tradeoffs.", selection, hasSelection);
+          }
+        },
+        {
+          label: "Explain this change",
+          description: "Ask why this change exists and how it fits the broader diff.",
+          onSelect: () => {
+            buildAgentActionComment("question", hasSelection ? "Explain what changed in this selected code and why this approach was chosen over the most obvious alternatives." : "Summarize what changed in this file and why these edits matter to the overall change set.", selection, hasSelection);
+          }
+        },
+        {
+          label: "Risk-check",
+          description: "Ask for regressions, edge cases, and failure modes worth reviewing.",
+          onSelect: () => {
+            buildAgentActionComment("risk", "Review this context for regressions, edge cases, and correctness risks. Call out the most important things I should double-check in the diff.", selection, hasSelection);
+          }
+        },
+        {
+          label: "Test ideas",
+          description: "Ask which tests matter most before accepting the change.",
+          onSelect: () => {
+            buildAgentActionComment("tests", "Suggest the most important tests to run or add for this context, and explain what each test would protect against.", selection, hasSelection);
+          }
+        }
+      ]
+    });
+  }
+  inspectorController = createReviewInspectorController({
+    reviewDataFiles: reviewData.files,
+    state,
+    outlineContainerEl,
+    reviewQueueContainerEl,
+    activeFile,
+    getCurrentNavigationTarget,
+    getScopeComparison,
+    getScopeFilePath,
+    getScopeDisplayPath,
+    loadFileContents,
+    openNavigationTarget,
+    onCommentsChange: updateCommentsUI,
+    getCommentKind: (comment) => getCommentKind(comment),
+    getCommentKindLabel,
+    isCommentResolved,
+    isCommentAnchorStale
+  });
+  commandPaletteController = createReviewCommandPaletteController({
+    state,
+    currentSymbolLabelEl,
+    sidebarSearchInputEl,
+    getScopedFiles,
+    activeFile,
+    getScopeDisplayPath,
+    getActiveStatus,
+    statusLabel,
+    scopeLabel,
+    getCurrentSelectionContext,
+    getCurrentNavigationTarget,
+    getActiveLocationLabel,
+    getSelectionReference,
+    loadFileContents,
+    describeNavigationTarget,
+    writeToClipboard,
+    flashSummary,
+    openFile,
+    handleShowChangedSymbols,
+    handleAgentAction,
+    navigateUnresolvedComment
+  });
+  function openQuickOpenFiles() {
+    commandPaletteController?.openQuickOpenFiles();
+  }
+  function openCommandPalette() {
+    commandPaletteController?.openCommandPalette();
   }
   function layoutEditor() {
     editorController?.layout();
@@ -2560,6 +3941,7 @@ Target: \`${describeNavigationTarget(target)}\`
     syncViewZones();
     updateDecorations();
     commentManager?.renderFileComments();
+    renderReviewQueue();
   }
   function applyEditorOptions() {
     editorController?.applyOptions();
@@ -2568,6 +3950,8 @@ Target: \`${describeNavigationTarget(target)}\`
     sidebarController?.renderTree();
     submitButton.disabled = false;
     updateNavigationButtons();
+    renderReviewQueue();
+    renderOutline();
     if (editorController) {
       mountFile(options);
       requestAnimationFrame(() => {
@@ -2595,20 +3979,33 @@ Target: \`${describeNavigationTarget(target)}\`
     editorController?.saveCurrentScrollPosition();
     state.currentScope = scope;
     renderAll({ restoreFileScroll: true });
+    scheduleCodeSearch(state.fileFilter);
     const file = activeFile();
     if (file)
       ensureFileLoaded(file.id, state.currentScope);
     updateNavigationButtons();
   }
   function handleSubmitReview() {
+    if (pendingSubmitRequestId) {
+      return;
+    }
     commentManager?.syncCommentBodiesFromDOM();
+    const requestId = `submit:${Date.now()}:${++requestSequence}`;
     const payload = {
       type: "submit",
+      requestId,
       overallComment: state.overallComment.trim(),
-      comments: state.comments.map((comment) => ({ ...comment, body: comment.body.trim() })).filter((comment) => comment.status === "submitted" && comment.body.length > 0)
+      comments: state.comments.map((comment) => ({
+        ...comment,
+        body: comment.body.trim(),
+        kind: getCommentKind(comment),
+        resolved: isCommentResolved(comment)
+      })).filter((comment) => comment.status === "submitted" && comment.body.length > 0 && comment.resolved !== true)
     };
+    pendingSubmitRequestId = requestId;
+    setSubmitPendingState(true);
     window.glimpse.send(payload);
-    window.glimpse.close();
+    flashSummary("Submitting review feedback…");
   }
   function handleCancelReview() {
     window.glimpse.send({ type: "cancel" });
@@ -2698,11 +4095,28 @@ Target: \`${describeNavigationTarget(target)}\`
     const key = cacheKey(message.scope, message.fileId);
     state.fileErrors[key] = message.message || "Unknown error";
     delete state.pendingRequestIds[key];
-    rejectPendingFileWaiters(message.fileId, message.scope, state.fileErrors[key]);
+    rejectPendingFileWaiters(message.fileId, message.scope);
     sidebarController?.renderTree();
     if (state.activeFileId === message.fileId && state.currentScope === message.scope) {
       mountFile({ preserveScroll: false });
     }
+  }
+  function handleHostDefinitionData(message) {
+    resolvePendingDefinitionWaiters(message.requestId, message.target);
+  }
+  function handleHostDefinitionError(message) {
+    rejectPendingDefinitionWaiters(message.requestId, new Error(message.message || "Unknown navigation error"));
+  }
+  function handleHostReferencesData(message) {
+    resolvePendingReferencesWaiters(message.requestId, message.targets ?? []);
+  }
+  function handleHostReferencesError(message) {
+    rejectPendingReferencesWaiters(message.requestId, new Error(message.message || "Unknown references error"));
+  }
+  function handleHostSubmitAck(message) {
+    if (message.requestId !== pendingSubmitRequestId)
+      return;
+    flashSummary(`Review received by host${message.commentCount > 0 ? ` (${message.commentCount} comment${message.commentCount === 1 ? "" : "s"})` : ""}. Closing…`);
   }
   var runtimeController = createReviewRuntimeController({
     dom: {
@@ -2721,7 +4135,13 @@ Target: \`${describeNavigationTarget(target)}\`
       scopeDiffButton,
       scopeLastCommitButton,
       scopeAllButton,
-      sidebarSearchInputEl
+      sidebarSearchInputEl,
+      sidebarStatusFilterEl,
+      hideReviewedCheckboxEl,
+      commentedOnlyCheckboxEl,
+      changedOnlyCheckboxEl,
+      changedSymbolsButton,
+      agentActionButton
     },
     events: {
       onSubmit: handleSubmitReview,
@@ -2745,16 +4165,81 @@ Target: \`${describeNavigationTarget(target)}\`
       onScopeAll: () => switchScope("all-files"),
       onSidebarSearchInput: (value) => {
         state.fileFilter = value;
+        scheduleCodeSearch(value);
         sidebarController?.renderTree();
       },
       onSidebarSearchClear: () => {
         state.fileFilter = "";
+        clearCodeSearch();
         sidebarController?.renderTree();
-      }
+      },
+      onStatusFilterChange: (value) => {
+        state.statusFilter = value ?? "all";
+        sidebarController?.renderTree();
+      },
+      onHideReviewedChange: (checked) => {
+        state.hideReviewedFiles = checked;
+        sidebarController?.renderTree();
+      },
+      onCommentedOnlyChange: (checked) => {
+        state.showCommentedFilesOnly = checked;
+        sidebarController?.renderTree();
+      },
+      onChangedOnlyChange: (checked) => {
+        state.showChangedFilesOnly = checked;
+        sidebarController?.renderTree();
+      },
+      onShowChangedSymbols: () => {
+        handleShowChangedSymbols();
+      },
+      onAgentAction: handleAgentAction
     },
     messages: {
       onFileData: handleHostFileData,
-      onFileError: handleHostFileError
+      onFileError: handleHostFileError,
+      onDefinitionData: handleHostDefinitionData,
+      onDefinitionError: handleHostDefinitionError,
+      onReferencesData: handleHostReferencesData,
+      onReferencesError: handleHostReferencesError,
+      onSubmitAck: handleHostSubmitAck
+    }
+  });
+  window.addEventListener("keydown", (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === "p") {
+      event.preventDefault();
+      openCommandPalette();
+      return;
+    }
+    if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === "p") {
+      event.preventDefault();
+      openQuickOpenFiles();
+      return;
+    }
+    if (event.defaultPrevented)
+      return;
+    const target = event.target;
+    const isTypingTarget = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target?.isContentEditable === true;
+    if (isTypingTarget)
+      return;
+    if (event.key === "f" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      event.preventDefault();
+      sidebarSearchInputEl.focus();
+      sidebarSearchInputEl.select();
+      return;
+    }
+    if (event.key === "s" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      event.preventDefault();
+      handleShowChangedSymbols();
+      return;
+    }
+    if (event.key.toLowerCase() === "n" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      event.preventDefault();
+      navigateUnresolvedComment(event.shiftKey ? "previous" : "next");
+      return;
+    }
+    if (event.key === "e" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      event.preventDefault();
+      handleAgentAction();
     }
   });
   runtimeController.bind();
@@ -2762,6 +4247,8 @@ Target: \`${describeNavigationTarget(target)}\`
   ensureActiveFileForScope();
   sidebarController?.renderTree();
   commentManager?.renderFileComments();
+  renderReviewQueue();
+  renderOutline();
   sidebarController?.updateSidebarLayout();
   setupMonaco();
 })();

@@ -6,6 +6,8 @@
   "scripts": {
     "check": "tsc -p tsconfig.json",
     "check:web": "tsc -p tsconfig.web.json",
+    "lint": "eslint src scripts eslint.config.js",
+    "lint:fix": "eslint src scripts eslint.config.js --fix",
     "build:web": "node scripts/build-web.mjs",
     "postinstall": "node scripts/ensure-glimpse-host.mjs",
     "prepare": "husky"
@@ -23,15 +25,19 @@
   },
   "dependencies": {
     "@mariozechner/pi-tui": "^0.69.0",
-    "glimpseui": "^0.6.0"
+    "glimpseui": "^0.6.0",
+    "typescript": "^5.9.2"
   },
   "peerDependencies": {
     "@mariozechner/pi-coding-agent": "*"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^24.5.2",
     "@typescript/native-preview": "^7.0.0-dev.20260313.1",
+    "eslint": "^10.2.1",
+    "globals": "^17.5.0",
     "husky": "^9.1.7",
-    "typescript": "^5.9.2"
+    "typescript-eslint": "^8.59.0"
   }
 }

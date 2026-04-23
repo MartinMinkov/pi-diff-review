@@ -1,7 +1,5 @@
 import {
   buildTree,
-  getBaseName,
-  getFileSearchPath,
   escapeHtml,
 } from "../../shared/lib/utils.js";
 import type {
@@ -12,6 +10,10 @@ import type {
 } from "../../shared/contracts/review.js";
 import type { TreeNode } from "../../shared/lib/utils.js";
 import type { ReviewState } from "../../shared/state/review-state.js";
+import type {
+  ReviewCodeSearchMatch,
+  ReviewCodeSearchState,
+} from "../../app/search/review-code-search.js";
 
 interface FileRequestState {
   contents?: ReviewFileContents;
@@ -27,6 +29,10 @@ interface ReviewSidebarOptions {
   fileTreeEl: HTMLDivElement;
   summaryEl: HTMLSpanElement;
   modeHintEl: HTMLDivElement;
+  sidebarStatusFilterEl: HTMLSelectElement;
+  hideReviewedCheckboxEl: HTMLInputElement;
+  commentedOnlyCheckboxEl: HTMLInputElement;
+  changedOnlyCheckboxEl: HTMLInputElement;
   submitButton: HTMLButtonElement;
   toggleReviewedButton: HTMLButtonElement;
   toggleUnchangedButton: HTMLButtonElement;
@@ -43,9 +49,11 @@ interface ReviewSidebarOptions {
   getFilteredFiles: () => ReviewFile[];
   getRequestState: (fileId: string, scope: ReviewScope) => FileRequestState;
   isFileReviewed: (fileId: string) => boolean;
+  getCodeSearchState: () => ReviewCodeSearchState;
   getActiveStatus: (file: ReviewFile | null) => ChangeStatus | null;
   activeFile: () => ReviewFile | null;
   openFile: (fileId: string) => void;
+  openCodeSearchMatch: (match: ReviewCodeSearchMatch) => void;
   ensureActiveFileForScope: () => void;
   activeFileShowsDiff: () => boolean;
 }
@@ -68,6 +76,10 @@ export function createSidebarController(
     fileTreeEl,
     summaryEl,
     modeHintEl,
+    sidebarStatusFilterEl,
+    hideReviewedCheckboxEl,
+    commentedOnlyCheckboxEl,
+    changedOnlyCheckboxEl,
     submitButton,
     toggleReviewedButton,
     toggleUnchangedButton,
@@ -84,16 +96,38 @@ export function createSidebarController(
     getFilteredFiles,
     getRequestState,
     isFileReviewed,
+    getCodeSearchState,
     getActiveStatus,
     activeFile,
     openFile,
+    openCodeSearchMatch,
     ensureActiveFileForScope,
     activeFileShowsDiff,
   } = options;
 
+  function renderHighlightedLine(match: ReviewCodeSearchMatch): string {
+    const raw = match.lineText.trim() || "(blank line)";
+    const trimmedOffset = match.lineText.indexOf(raw);
+    if (raw === "(blank line)") {
+      return escapeHtml(raw);
+    }
+
+    const start = Math.max(0, match.matchStartColumn - 1 - trimmedOffset);
+    const end = Math.max(start, match.matchEndColumn - 1 - trimmedOffset);
+    const safeStart = Math.min(start, raw.length);
+    const safeEnd = Math.min(end, raw.length);
+
+    return [
+      escapeHtml(raw.slice(0, safeStart)),
+      `<mark class="rounded-sm bg-[#264f78] px-0.5 text-review-text">${escapeHtml(raw.slice(safeStart, safeEnd))}</mark>`,
+      escapeHtml(raw.slice(safeEnd)),
+    ].join("");
+  }
+
   function getSubmittedCommentCount(fileId?: string): number {
     return state.comments.filter((comment) => {
       if (comment.status !== "submitted") return false;
+      if (comment.resolved === true) return false;
       if (comment.scope !== state.currentScope) return false;
       if (fileId != null && comment.fileId !== fileId) return false;
       return true;
@@ -167,42 +201,26 @@ export function createSidebarController(
     }
   }
 
-  function renderSearchResults(files: ReviewFile[]) {
-    files.forEach((file) => {
-      const path = getFileSearchPath(file);
-      const baseName = getBaseName(path);
-      const parentPath = path.includes("/")
-        ? path.slice(0, path.lastIndexOf("/"))
-        : "";
-      const count = getSubmittedCommentCount(file.id);
-      const reviewed = isFileReviewed(file.id);
-      const requestState = getRequestState(file.id, state.currentScope);
-      const loading =
-        requestState.requestId != null && requestState.contents == null;
-      const errored = requestState.error != null;
-      const status = getActiveStatus(file);
+  function renderCodeSearchResults(matches: ReviewCodeSearchMatch[]) {
+    const heading = document.createElement("div");
+    heading.className =
+      "px-2 pb-2 pt-3 text-[11px] font-semibold uppercase tracking-wide text-review-muted";
+    heading.textContent = "Code";
+    fileTreeEl.appendChild(heading);
+
+    matches.forEach((match) => {
       const button = document.createElement("button");
       button.type = "button";
-      button.className = [
-        "group flex w-full items-center justify-between gap-3 rounded-md px-2 py-2 text-left",
-        file.id === state.activeFileId
-          ? "bg-[#373e47] text-white"
-          : "text-[#c9d1d9] hover:bg-[#21262d]",
-      ].join(" ");
+      button.className =
+        "group mb-2 flex w-full items-start gap-3 rounded-md border border-review-border bg-[#010409] px-3 py-3 text-left hover:bg-[#11161d]";
       button.innerHTML = `
+        <span class="mt-0.5 shrink-0 rounded-md border border-review-border bg-review-panel px-2 py-0.5 text-[10px] font-medium text-review-muted">${match.lineNumber}</span>
         <span class="min-w-0 flex-1">
-          <span class="flex items-center gap-1.5">
-            <span class="shrink-0 text-[10px] ${reviewed ? "text-[#3fb950]" : errored ? "text-red-400" : loading ? "text-[#58a6ff]" : "text-transparent"}">${reviewed ? "●" : errored ? "!" : loading ? "…" : "●"}</span>
-            <span class="truncate text-[13px] ${file.id === state.activeFileId ? "font-medium" : ""}>${escapeHtml(baseName)}</span>
-          </span>
-          <span class="mt-0.5 block truncate pl-[14px] text-[11px] ${file.id === state.activeFileId ? "text-[#c9d1d9]" : "text-review-muted"}">${escapeHtml(parentPath || path)}</span>
-        </span>
-        <span class="flex shrink-0 items-center gap-1.5">
-          ${count > 0 ? `<span class="flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[#1f2937] px-1 text-[10px] font-medium text-[#c9d1d9]">${count}</span>` : ""}
-          ${status ? `<span class="font-medium ${statusBadgeClass(status)}">${statusLabel(status).charAt(0)}</span>` : ""}
+          <span class="block truncate text-[12px] font-medium text-review-text">${escapeHtml(match.path)}</span>
+          <span class="mt-1 block line-clamp-2 break-words text-[12px] text-review-muted">${renderHighlightedLine(match)}</span>
         </span>
       `;
-      button.addEventListener("click", () => openFile(file.id));
+      button.addEventListener("click", () => openCodeSearchMatch(match));
       fileTreeEl.appendChild(button);
     });
   }
@@ -276,6 +294,10 @@ export function createSidebarController(
       : "none";
     updateScopeButtons();
     modeHintEl.textContent = scopeHint(state.currentScope);
+    sidebarStatusFilterEl.value = state.statusFilter;
+    hideReviewedCheckboxEl.checked = state.hideReviewedFiles;
+    commentedOnlyCheckboxEl.checked = state.showCommentedFilesOnly;
+    changedOnlyCheckboxEl.checked = state.showChangedFilesOnly;
     submitButton.disabled = false;
   }
 
@@ -284,18 +306,32 @@ export function createSidebarController(
     fileTreeEl.innerHTML = "";
     const scopedFiles = getScopedFiles();
     const visibleFiles = getFilteredFiles();
+    const codeSearch = getCodeSearchState();
+    const query = state.fileFilter.trim();
 
-    if (visibleFiles.length === 0) {
-      const message = state.fileFilter.trim()
-        ? `No files match <span class="text-review-text">${escapeHtml(state.fileFilter.trim())}</span>.`
+    if (visibleFiles.length === 0 && (!query || codeSearch.results.length === 0)) {
+      const message = query
+        ? `No code matches <span class="text-review-text">${escapeHtml(state.fileFilter.trim())}</span>.`
         : `No files in <span class="text-review-text">${escapeHtml(scopeLabel(state.currentScope).toLowerCase())}</span>.`;
       fileTreeEl.innerHTML = `
         <div class="px-3 py-4 text-sm text-review-muted">
           ${message}
         </div>
       `;
-    } else if (state.fileFilter.trim()) {
-      renderSearchResults(visibleFiles);
+    } else if (query) {
+      if (codeSearch.searching) {
+        const loading = document.createElement("div");
+        loading.className = "px-3 py-3 text-sm text-review-muted";
+        loading.textContent = "Searching code…";
+        fileTreeEl.appendChild(loading);
+      } else if (codeSearch.results.length > 0) {
+        renderCodeSearchResults(codeSearch.results);
+      } else if (query.length >= 2) {
+        const empty = document.createElement("div");
+        empty.className = "px-3 py-3 text-sm text-review-muted";
+        empty.textContent = "No code matches found.";
+        fileTreeEl.appendChild(empty);
+      }
     } else {
       renderTreeNode(buildTree(visibleFiles), 0);
     }
@@ -303,7 +339,7 @@ export function createSidebarController(
     sidebarTitleEl.textContent = scopeLabel(state.currentScope);
     const comments = getSubmittedCommentCount();
     const filteredSuffix = state.fileFilter.trim()
-      ? ` • ${visibleFiles.length} shown`
+      ? ` • ${codeSearch.results.length} code match(es)`
       : "";
     summaryEl.textContent = `${scopedFiles.length} file(s) • ${comments} comment(s)${state.overallComment ? " • overall note" : ""}${filteredSuffix}`;
     updateToggleButtons();

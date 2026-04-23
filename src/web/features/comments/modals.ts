@@ -1,5 +1,8 @@
 import { escapeHtml } from "../../shared/lib/utils.js";
-import type { DiffReviewComment } from "../../shared/contracts/review.js";
+import type {
+  DiffReviewComment,
+  DiffReviewCommentKind,
+} from "../../shared/contracts/review.js";
 
 interface CommentRenderOptions {
   onDelete: () => void;
@@ -36,6 +39,53 @@ export interface PeekModalOptions {
   code: string;
   openLabel?: string;
   onOpen: () => void;
+}
+
+export interface ActionModalOptions {
+  title: string;
+  description: string;
+  actions: Array<{
+    label: string;
+    description: string;
+    onSelect: () => void;
+  }>;
+}
+
+export interface SymbolModalOptions {
+  title: string;
+  description: string;
+  items: Array<{
+    title: string;
+    description: string;
+    kind: string;
+    onSelect: () => void;
+  }>;
+}
+
+export interface CommandPaletteOptions {
+  title: string;
+  description: string;
+  items: Array<{
+    label: string;
+    detail?: string;
+    hint?: string;
+    onSelect: () => void;
+  }>;
+}
+
+function getCommentKindLabel(kind: DiffReviewCommentKind): string {
+  switch (kind) {
+    case "question":
+      return "Question";
+    case "risk":
+      return "Risk";
+    case "explain":
+      return "Explain";
+    case "tests":
+      return "Tests";
+    default:
+      return "Feedback";
+  }
 }
 
 function insertAtCursor(textarea: HTMLTextAreaElement, value: string): void {
@@ -265,6 +315,272 @@ export function showPeekModal(options: PeekModalOptions): void {
   });
 }
 
+export function showActionModal(options: ActionModalOptions): void {
+  const backdrop = document.createElement("div");
+  backdrop.className = "review-modal-backdrop";
+  backdrop.innerHTML = `
+    <div class="review-modal-card">
+      <div class="mb-2 text-base font-semibold text-white">${escapeHtml(options.title)}</div>
+      <div class="mb-4 text-sm text-review-muted">${escapeHtml(options.description)}</div>
+      <div class="space-y-2">
+        ${options.actions
+          .map(
+            (action, index) => `
+              <button data-action-index="${index}" class="w-full rounded-md border border-review-border bg-[#010409] px-4 py-3 text-left hover:bg-[#11161d] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                <div class="text-sm font-medium text-review-text">${escapeHtml(action.label)}</div>
+                <div class="mt-1 text-xs leading-5 text-review-muted">${escapeHtml(action.description)}</div>
+              </button>
+            `,
+          )
+          .join("")}
+      </div>
+      <div class="mt-4 flex justify-end">
+        <button id="review-modal-close" class="cursor-pointer rounded-md border border-review-border bg-review-panel px-4 py-2 text-sm font-medium text-review-text hover:bg-[#21262d]">Close</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(backdrop);
+
+  const close = () => backdrop.remove();
+  (
+    backdrop.querySelector("#review-modal-close") as HTMLButtonElement | null
+  )?.addEventListener("click", close);
+  backdrop
+    .querySelectorAll<HTMLElement>("[data-action-index]")
+    .forEach((node) => {
+      node.addEventListener("click", () => {
+        const index = Number(node.getAttribute("data-action-index") || "-1");
+        const action = options.actions[index];
+        if (!action) return;
+        action.onSelect();
+        close();
+      });
+    });
+
+  backdrop.addEventListener("click", (event) => {
+    if (event.target === backdrop) close();
+  });
+}
+
+export function showSymbolModal(options: SymbolModalOptions): void {
+  const backdrop = document.createElement("div");
+  backdrop.className = "review-modal-backdrop";
+  backdrop.innerHTML = `
+    <div class="review-modal-card">
+      <div class="mb-2 text-base font-semibold text-white">${escapeHtml(options.title)}</div>
+      <div class="mb-4 text-sm text-review-muted">${escapeHtml(options.description)}</div>
+      <input
+        id="review-symbol-search"
+        type="text"
+        spellcheck="false"
+        autocomplete="off"
+        placeholder="Filter symbols"
+        class="mb-3 w-full rounded-md border border-review-border bg-[#010409] px-3 py-2 text-sm text-review-text outline-none placeholder:text-review-muted focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+      />
+      <div id="review-symbol-list" class="scrollbar-thin max-h-[55vh] space-y-2 overflow-auto"></div>
+      <div class="mt-4 flex justify-end">
+        <button id="review-modal-close" class="cursor-pointer rounded-md border border-review-border bg-review-panel px-4 py-2 text-sm font-medium text-review-text hover:bg-[#21262d]">Close</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(backdrop);
+
+  const searchInput = backdrop.querySelector(
+    "#review-symbol-search",
+  ) as HTMLInputElement | null;
+  const listEl = backdrop.querySelector(
+    "#review-symbol-list",
+  ) as HTMLDivElement | null;
+  const close = () => backdrop.remove();
+
+  function render(query = "") {
+    if (!listEl) return;
+    const normalized = query.trim().toLowerCase();
+    const items = options.items.filter((item) => {
+      if (!normalized) return true;
+      return `${item.title} ${item.description} ${item.kind}`
+        .toLowerCase()
+        .includes(normalized);
+    });
+
+    listEl.innerHTML =
+      items.length > 0
+        ? items
+            .map(
+              (item, index) => `
+                <button data-symbol-index="${index}" class="flex w-full items-center justify-between gap-3 rounded-md border border-review-border bg-[#010409] px-4 py-3 text-left hover:bg-[#11161d]">
+                  <span class="min-w-0">
+                    <span class="block truncate text-sm font-medium text-review-text">${escapeHtml(item.title)}</span>
+                    <span class="mt-1 block truncate text-xs text-review-muted">${escapeHtml(item.description)}</span>
+                  </span>
+                  <span class="shrink-0 rounded-md border border-review-border bg-review-panel px-2 py-0.5 text-[11px] font-medium text-review-muted">${escapeHtml(item.kind)}</span>
+                </button>
+              `,
+            )
+            .join("")
+        : `<div class="rounded-md border border-review-border bg-[#010409] px-4 py-4 text-sm text-review-muted">No symbols match this filter.</div>`;
+
+    listEl.querySelectorAll<HTMLElement>("[data-symbol-index]").forEach((node) => {
+      node.addEventListener("click", () => {
+        const index = Number(node.getAttribute("data-symbol-index") || "-1");
+        const filtered = options.items.filter((item) => {
+          if (!normalized) return true;
+          return `${item.title} ${item.description} ${item.kind}`
+            .toLowerCase()
+            .includes(normalized);
+        });
+        filtered[index]?.onSelect();
+        close();
+      });
+    });
+  }
+
+  (
+    backdrop.querySelector("#review-modal-close") as HTMLButtonElement | null
+  )?.addEventListener("click", close);
+  searchInput?.addEventListener("input", () => render(searchInput.value));
+  backdrop.addEventListener("click", (event) => {
+    if (event.target === backdrop) close();
+  });
+  render();
+  searchInput?.focus();
+}
+
+export function showCommandPaletteModal(
+  options: CommandPaletteOptions,
+): void {
+  const backdrop = document.createElement("div");
+  backdrop.className = "review-modal-backdrop";
+  backdrop.innerHTML = `
+    <div class="review-modal-card">
+      <div class="mb-2 text-base font-semibold text-white">${escapeHtml(options.title)}</div>
+      <div class="mb-4 text-sm text-review-muted">${escapeHtml(options.description)}</div>
+      <input
+        id="review-command-search"
+        type="text"
+        spellcheck="false"
+        autocomplete="off"
+        placeholder="Type a command"
+        class="mb-3 w-full rounded-md border border-review-border bg-[#010409] px-3 py-2 text-sm text-review-text outline-none placeholder:text-review-muted focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+      />
+      <div id="review-command-list" class="scrollbar-thin max-h-[55vh] space-y-2 overflow-auto"></div>
+      <div class="mt-4 flex items-center justify-between gap-3 text-xs text-review-muted">
+        <span>Enter to run</span>
+        <span>Esc to close</span>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(backdrop);
+
+  const searchInput = backdrop.querySelector(
+    "#review-command-search",
+  ) as HTMLInputElement | null;
+  const listEl = backdrop.querySelector(
+    "#review-command-list",
+  ) as HTMLDivElement | null;
+  let activeIndex = 0;
+
+  const close = () => {
+    document.removeEventListener("keydown", onKeyDown, true);
+    backdrop.remove();
+  };
+
+  function getFilteredItems(): CommandPaletteOptions["items"] {
+    const query = (searchInput?.value || "").trim().toLowerCase();
+    if (!query) return options.items;
+    return options.items.filter((item) =>
+      `${item.label} ${item.detail || ""} ${item.hint || ""}`
+        .toLowerCase()
+        .includes(query),
+    );
+  }
+
+  function render(): void {
+    if (!listEl) return;
+    const items = getFilteredItems();
+    if (activeIndex >= items.length) {
+      activeIndex = Math.max(0, items.length - 1);
+    }
+
+    listEl.innerHTML =
+      items.length > 0
+        ? items
+            .map(
+              (item, index) => `
+                <button data-command-index="${index}" class="${
+                  index === activeIndex
+                    ? "border-blue-500 bg-[#11161d]"
+                    : "border-review-border bg-[#010409] hover:bg-[#11161d]"
+                } flex w-full items-center justify-between gap-3 rounded-md border px-4 py-3 text-left focus:outline-none">
+                  <span class="min-w-0">
+                    <span class="block truncate text-sm font-medium text-review-text">${escapeHtml(item.label)}</span>
+                    ${item.detail ? `<span class="mt-1 block truncate text-xs text-review-muted">${escapeHtml(item.detail)}</span>` : ""}
+                  </span>
+                  ${item.hint ? `<span class="shrink-0 text-[11px] text-review-muted">${escapeHtml(item.hint)}</span>` : ""}
+                </button>
+              `,
+            )
+            .join("")
+        : `<div class="rounded-md border border-review-border bg-[#010409] px-4 py-4 text-sm text-review-muted">No commands match this filter.</div>`;
+
+    listEl.querySelectorAll<HTMLElement>("[data-command-index]").forEach((node) => {
+      node.addEventListener("click", () => {
+        const index = Number(node.getAttribute("data-command-index") || "-1");
+        const item = getFilteredItems()[index];
+        if (!item) return;
+        item.onSelect();
+        close();
+      });
+    });
+  }
+
+  function runActive(): void {
+    const item = getFilteredItems()[activeIndex];
+    if (!item) return;
+    item.onSelect();
+    close();
+  }
+
+  function onKeyDown(event: KeyboardEvent): void {
+    if (!backdrop.isConnected) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      close();
+      return;
+    }
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      activeIndex = Math.min(activeIndex + 1, Math.max(0, getFilteredItems().length - 1));
+      render();
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      activeIndex = Math.max(activeIndex - 1, 0);
+      render();
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      runActive();
+    }
+  }
+
+  searchInput?.addEventListener("input", () => {
+    activeIndex = 0;
+    render();
+  });
+  backdrop.addEventListener("click", (event) => {
+    if (event.target === backdrop) close();
+  });
+  document.addEventListener("keydown", onKeyDown, true);
+  render();
+  searchInput?.focus();
+}
+
 export function renderCommentDOM(
   comment: DiffReviewComment,
   scopeLabel: (scope: DiffReviewComment["scope"]) => string,
@@ -281,7 +597,18 @@ export function renderCommentDOM(
   if (comment.status === "draft") {
     container.innerHTML = `
       <div class="mb-3 flex items-center justify-between gap-3">
-        <div class="text-xs font-semibold text-review-text">${escapeHtml(title)}</div>
+        <div class="min-w-0">
+          <div class="truncate text-xs font-semibold text-review-text">${escapeHtml(title)}</div>
+          <div class="mt-2">
+            <select data-comment-kind class="rounded-md border border-review-border bg-[#010409] px-2 py-1 text-xs font-medium text-review-text outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+              <option value="feedback">Feedback</option>
+              <option value="question">Question</option>
+              <option value="risk">Risk</option>
+              <option value="explain">Explain</option>
+              <option value="tests">Tests</option>
+            </select>
+          </div>
+        </div>
         <div class="flex items-center gap-2">
           <button data-action="cancel" class="cursor-pointer rounded-md border border-review-border bg-review-panel px-3 py-1.5 text-xs font-medium text-review-text hover:bg-[#21262d]">Cancel</button>
           <button data-action="submit" class="cursor-pointer rounded-md border border-[rgba(240,246,252,0.1)] bg-[#238636] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#2ea043] disabled:cursor-not-allowed disabled:opacity-50">Submit</button>
@@ -299,12 +626,21 @@ export function renderCommentDOM(
     const submitButton = container.querySelector(
       "[data-action='submit']",
     ) as HTMLButtonElement | null;
+    const kindSelect = container.querySelector(
+      "[data-comment-kind]",
+    ) as HTMLSelectElement | null;
 
     if (!textarea) {
       return container;
     }
 
     textarea.value = comment.body || "";
+    if (kindSelect) {
+      kindSelect.value = comment.kind ?? "feedback";
+      kindSelect.addEventListener("change", () => {
+        comment.kind = kindSelect.value as DiffReviewCommentKind;
+      });
+    }
     setupPasteHandler(textarea);
 
     const syncSubmitState = () => {
@@ -338,6 +674,8 @@ export function renderCommentDOM(
 
   const preview = comment.body.trim().split("\n")[0] || "Comment";
   const toggleLabel = comment.collapsed ? "Expand comment" : "Collapse comment";
+  const kind = comment.kind ?? "feedback";
+  const resolved = comment.resolved === true;
 
   container.innerHTML = `
     <div class="rounded-md border border-review-border bg-review-panel">
@@ -347,7 +685,11 @@ export function renderCommentDOM(
             <path d="M12.78 6.22a.749.749 0 0 1 0 1.06l-4.25 4.25a.749.749 0 0 1-1.06 0L3.22 7.28a.749.749 0 0 1 1.06-1.06L8 9.939l3.72-3.719a.749.749 0 0 1 1.06 0Z"></path>
           </svg>
           <span class="min-w-0 flex-1">
-            <span class="block truncate text-xs font-semibold text-review-text">${escapeHtml(title)}</span>
+            <span class="flex items-center gap-2">
+              <span class="block truncate text-xs font-semibold text-review-text">${escapeHtml(title)}</span>
+              <span class="shrink-0 rounded-md border border-review-border bg-[#0d1117] px-2 py-0.5 text-[10px] font-medium text-review-muted">${escapeHtml(getCommentKindLabel(kind))}</span>
+              ${resolved ? `<span class="shrink-0 rounded-md border border-[#2ea043]/35 bg-[#238636]/12 px-2 py-0.5 text-[10px] font-medium text-[#3fb950]">Resolved</span>` : ""}
+            </span>
             ${
               comment.collapsed
                 ? `<span class="mt-0.5 block truncate text-xs text-review-muted">${escapeHtml(preview)}</span>`
@@ -355,6 +697,7 @@ export function renderCommentDOM(
             }
           </span>
         </button>
+        <button data-action="resolve" class="cursor-pointer rounded-md border border-transparent bg-transparent px-2 py-1 text-xs font-medium text-review-muted hover:bg-[#11161d] hover:text-review-text">${resolved ? "Reopen" : "Resolve"}</button>
         ${
           comment.collapsed
             ? ""
@@ -375,9 +718,16 @@ export function renderCommentDOM(
   const deleteButton = container.querySelector(
     "[data-action='delete']",
   ) as HTMLButtonElement | null;
+  const resolveButton = container.querySelector(
+    "[data-action='resolve']",
+  ) as HTMLButtonElement | null;
 
   toggleButton?.addEventListener("click", () => {
     comment.collapsed = !comment.collapsed;
+    options.onUpdate();
+  });
+  resolveButton?.addEventListener("click", () => {
+    comment.resolved = !(comment.resolved === true);
     options.onUpdate();
   });
   deleteButton?.addEventListener("click", options.onDelete);

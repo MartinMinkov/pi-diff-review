@@ -9,12 +9,15 @@ import {
   loadReviewFileContents,
 } from "../repo/review-window-data.js";
 import { composeReviewPrompt } from "../prompt/compose-review-prompt.js";
+import { ReviewNavigationService } from "../navigation/service.js";
 import type {
   ReviewCancelPayload,
   ReviewFile,
   ReviewFileContents,
   ReviewHostMessage,
+  ReviewRequestDefinitionPayload,
   ReviewRequestFilePayload,
+  ReviewRequestReferencesPayload,
   ReviewSubmitPayload,
   ReviewWindowMessage,
 } from "../../shared/contracts/review.js";
@@ -38,6 +41,18 @@ function isRequestFilePayload(
   return value.type === "request-file";
 }
 
+function isRequestDefinitionPayload(
+  value: ReviewWindowMessage,
+): value is ReviewRequestDefinitionPayload {
+  return value.type === "request-definition";
+}
+
+function isRequestReferencesPayload(
+  value: ReviewWindowMessage,
+): value is ReviewRequestReferencesPayload {
+  return value.type === "request-references";
+}
+
 type WaitingEditorResult = "escape" | "window-settled";
 
 function escapeForInlineScript(value: string): string {
@@ -57,7 +72,9 @@ export default function (pi: ExtensionAPI) {
     activeWindow = null;
     try {
       windowToClose.close();
-    } catch {}
+    } catch {
+      // Ignore close errors while tearing down the review window.
+    }
   }
 
   function showWaitingUI(ctx: ExtensionCommandContext): {
@@ -160,6 +177,7 @@ export default function (pi: ExtensionAPI) {
     const waitingUI = showWaitingUI(ctx);
     const fileMap = new Map(files.map((file) => [file.id, file]));
     const contentCache = new Map<string, Promise<ReviewFileContents>>();
+    const navigationService = new ReviewNavigationService(repoRoot, files);
 
     const sendWindowMessage = (message: ReviewHostMessage): void => {
       if (activeWindow !== window) return;
@@ -192,6 +210,7 @@ export default function (pi: ExtensionAPI) {
           window.removeListener("message", onMessage);
           window.removeListener("closed", onClosed);
           window.removeListener("error", onError);
+          void navigationService.dispose();
           if (activeWindow === window) {
             activeWindow = null;
           }
@@ -250,7 +269,65 @@ export default function (pi: ExtensionAPI) {
             void handleRequestFile(message);
             return;
           }
+          if (isRequestDefinitionPayload(message)) {
+            void (async () => {
+              try {
+                const target = await navigationService.resolveDefinition(
+                  message.request,
+                );
+                sendWindowMessage({
+                  type: "definition-data",
+                  requestId: message.requestId,
+                  target,
+                });
+              } catch (error) {
+                const messageText =
+                  error instanceof Error ? error.message : String(error);
+                sendWindowMessage({
+                  type: "definition-error",
+                  requestId: message.requestId,
+                  message: messageText,
+                });
+              }
+            })();
+            return;
+          }
+          if (isRequestReferencesPayload(message)) {
+            void (async () => {
+              try {
+                const targets = await navigationService.resolveReferences(
+                  message.request,
+                );
+                sendWindowMessage({
+                  type: "references-data",
+                  requestId: message.requestId,
+                  targets,
+                });
+              } catch (error) {
+                const messageText =
+                  error instanceof Error ? error.message : String(error);
+                sendWindowMessage({
+                  type: "references-error",
+                  requestId: message.requestId,
+                  message: messageText,
+                });
+              }
+            })();
+            return;
+          }
           if (isSubmitPayload(message) || isCancelPayload(message)) {
+            if (isSubmitPayload(message)) {
+              sendWindowMessage({
+                type: "submit-ack",
+                requestId: message.requestId,
+                commentCount: message.comments.length,
+                hasOverallComment: message.overallComment.trim().length > 0,
+              });
+              setTimeout(() => {
+                settle(message);
+              }, 40);
+              return;
+            }
             settle(message);
           }
         };

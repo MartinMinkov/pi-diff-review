@@ -1,34 +1,41 @@
 import { inferLanguage } from "../../shared/lib/utils.js";
+import {
+  navigationActionLabel,
+  supportsSemanticDefinition,
+} from "../../../shared/lib/navigation.js";
+import type {
+  MonacoApi,
+  MonacoCancellationToken,
+  MonacoCodeEditor,
+  MonacoDecoration,
+  MonacoDiffEditor,
+  MonacoPosition,
+  MonacoRequire,
+  MonacoTextModel,
+} from "./monaco-types.js";
 import { getReviewSymbolContext } from "../symbols/symbol-context.js";
 import type {
   DiffReviewComment,
   ReviewFile,
-  ReviewScope,
   ReviewFileContents,
-} from "../../shared/contracts/review.js";
-import type {
-  ReviewNavigationTarget,
   ReviewNavigationRequest,
   ReviewNavigationSide,
-  ReviewNavigationResolver,
-} from "../navigation/resolver.js";
+  ReviewNavigationTarget,
+  ReviewScope,
+} from "../../shared/contracts/review.js";
+import type { ReviewNavigationResolver } from "../navigation/resolver.js";
 import type {
   ReviewMountOptions,
   ReviewState,
   ReviewFileScrollState,
 } from "../../shared/state/review-state.js";
 
-interface MonacRequire {
-  (dependencies: string[], callback: () => void): void;
-  config(config: Record<string, unknown>): void;
-}
-
 type CommentSide = ReviewNavigationSide;
 
 declare global {
   interface Window {
-    monaco: unknown;
-    require?: MonacRequire;
+    monaco: MonacoApi | undefined;
+    require?: MonacoRequire;
   }
 }
 
@@ -70,6 +77,9 @@ interface ReviewEditorOptions {
   resolveNavigationTarget: (
     request: ReviewNavigationRequest,
   ) => ReviewNavigationTarget | null;
+  resolveDefinitionTarget: (
+    request: ReviewNavigationRequest,
+  ) => Promise<ReviewNavigationTarget | null>;
   describeNavigationTarget: (target: ReviewNavigationTarget) => string;
   openNavigationTarget: (target: ReviewNavigationTarget) => void;
   navigationResolver: ReviewNavigationResolver;
@@ -92,11 +102,24 @@ interface ReviewEditorController {
   revealNavigationTarget: (target: ReviewNavigationTarget) => void;
   getCurrentNavigationTarget: () => ReviewNavigationTarget | null;
   getCurrentNavigationRequest: () => ReviewNavigationRequest | null;
+  getCurrentSelectionContext: () => ReviewEditorSelectionContext | null;
 }
 
 interface ReviewEditorRequestResult {
   originalContent: string;
   modifiedContent: string;
+}
+
+export interface ReviewEditorSelectionContext {
+  fileId: string;
+  scope: ReviewScope;
+  side: ReviewNavigationSide;
+  sourcePath: string;
+  languageId: string;
+  content: string;
+  startLine: number;
+  endLine: number;
+  selectedText: string;
 }
 
 function scrollKey(scope: ReviewScope, fileId: string): string {
@@ -135,6 +158,7 @@ export function createReviewEditor(
     renderFileComments,
     canCommentOnSide,
     resolveNavigationTarget,
+    resolveDefinitionTarget,
     describeNavigationTarget,
     openNavigationTarget,
     navigationResolver,
@@ -142,13 +166,13 @@ export function createReviewEditor(
     currentFileLabelEl,
   } = options;
 
-  let monacoApi: any = null;
-  let diffEditor: any = null;
-  let originalModel: any = null;
-  let modifiedModel: any = null;
-  let originalDecorations: any[] = [];
-  let modifiedDecorations: any[] = [];
-  let activeViewZones: Array<{ id: string; editor: unknown }> = [];
+  let monacoApi: MonacoApi | null = null;
+  let diffEditor: MonacoDiffEditor | null = null;
+  let originalModel: MonacoTextModel | null = null;
+  let modifiedModel: MonacoTextModel | null = null;
+  let originalDecorations: string[] = [];
+  let modifiedDecorations: string[] = [];
+  let activeViewZones: Array<{ id: string; editor: MonacoCodeEditor }> = [];
   let editorResizeObserver: ResizeObserver | null = null;
   let pendingNavigationTarget: ReviewNavigationTarget | null = null;
   let lastFocusedSide: ReviewNavigationSide = "modified";
@@ -280,8 +304,8 @@ export function createReviewEditor(
             comment.side !== "file",
         )
       : [];
-    const originalRanges: any[] = [];
-    const modifiedRanges: any[] = [];
+    const originalRanges: MonacoDecoration[] = [];
+    const modifiedRanges: MonacoDecoration[] = [];
 
     for (const comment of comments) {
       const range = {
@@ -361,7 +385,9 @@ export function createReviewEditor(
     return getPlaceholderContents(file, scope);
   }
 
-  function getEditorForSide(side: ReviewNavigationSide): any {
+  function getEditorForSide(
+    side: ReviewNavigationSide,
+  ): MonacoCodeEditor | null {
     if (!diffEditor) return null;
     return side === "original"
       ? diffEditor.getOriginalEditor()
@@ -371,8 +397,8 @@ export function createReviewEditor(
   function getCurrentEditorContext(): {
     file: ReviewFile;
     side: ReviewNavigationSide;
-    editor: any;
-    model: any;
+    editor: MonacoCodeEditor;
+    model: MonacoTextModel;
     line: number;
     column: number;
   } | null {
@@ -427,17 +453,19 @@ export function createReviewEditor(
     };
   }
 
-  function emitEditorContextChange(): void {
+  function emitEditorContextChange(symbolLineOverride?: number): void {
     const navigationRequest = getCurrentNavigationRequest();
     const navigationTarget =
       navigationRequest != null
         ? resolveNavigationTarget(navigationRequest)
         : null;
+    const symbolLine =
+      symbolLineOverride ?? navigationRequest?.lineNumber ?? null;
     const symbolContext =
-      navigationRequest != null
+      navigationRequest != null && symbolLine != null
         ? getReviewSymbolContext(
             navigationRequest.content,
-            navigationRequest.lineNumber,
+            symbolLine,
             navigationRequest.languageId,
           )
         : { title: null, lineNumber: null };
@@ -448,6 +476,36 @@ export function createReviewEditor(
       symbolTitle: symbolContext.title,
       symbolLine: symbolContext.lineNumber,
     });
+  }
+
+  function getCurrentSelectionContext(): ReviewEditorSelectionContext | null {
+    const context = getCurrentEditorContext();
+    if (!context) return null;
+
+    const descriptor = navigationResolver.parseModelUri(context.model.uri);
+    if (!descriptor) return null;
+
+    const selection = context.editor?.getSelection?.();
+    const startLine = Math.max(1, selection?.startLineNumber ?? context.line);
+    const endLine = Math.max(1, selection?.endLineNumber ?? startLine);
+    const selectedText =
+      typeof context.editor?.getModel?.()?.getValueInRange === "function" &&
+      selection
+        ? String(context.editor.getModel().getValueInRange(selection) || "")
+        : "";
+
+    return {
+      fileId: descriptor.fileId,
+      scope: descriptor.scope,
+      side: descriptor.side,
+      sourcePath: descriptor.sourcePath,
+      languageId:
+        context.model.getLanguageId?.() || inferLanguage(descriptor.sourcePath),
+      content: context.model.getValue(),
+      startLine,
+      endLine,
+      selectedText,
+    };
   }
 
   function maybeRevealPendingNavigation(): void {
@@ -558,8 +616,8 @@ export function createReviewEditor(
     });
   }
 
-  function createGlyphHoverActions(editor: any, side: CommentSide) {
-    let hoverDecoration = [];
+  function createGlyphHoverActions(editor: MonacoCodeEditor, side: CommentSide) {
+    let hoverDecoration: string[] = [];
 
     function openDraftAtLine(line: number) {
       const file = activeFile();
@@ -621,8 +679,8 @@ export function createReviewEditor(
 
     for (const languageId of languages) {
       const buildRequest = (
-        model: any,
-        position: any,
+        model: MonacoTextModel,
+        position: MonacoPosition,
       ): ReviewNavigationRequest | null => {
         const context = navigationResolver.parseModelUri(model?.uri);
         if (!context) return null;
@@ -640,11 +698,16 @@ export function createReviewEditor(
       };
 
       monacoApi.languages.registerDefinitionProvider(languageId, {
-        provideDefinition(model: any, position: any) {
+        async provideDefinition(
+          model: MonacoTextModel,
+          position: MonacoPosition,
+          token: MonacoCancellationToken,
+        ) {
           const request = buildRequest(model, position);
           if (!request) return null;
 
-          const target = resolveNavigationTarget(request);
+          const target = await resolveDefinitionTarget(request);
+          if (token?.isCancellationRequested) return null;
           if (!target) return null;
 
           return {
@@ -660,12 +723,23 @@ export function createReviewEditor(
       });
 
       monacoApi.languages.registerHoverProvider(languageId, {
-        provideHover(model: any, position: any) {
+        async provideHover(
+          model: MonacoTextModel,
+          position: MonacoPosition,
+          token: MonacoCancellationToken,
+        ) {
           const request = buildRequest(model, position);
           if (!request) return null;
 
-          const target = resolveNavigationTarget(request);
+          const target =
+            resolveNavigationTarget(request) ??
+            (await resolveDefinitionTarget(request));
+          if (token?.isCancellationRequested) return null;
           if (!target) return null;
+          const actionLabel = navigationActionLabel(request.languageId);
+          const referencesLabel = supportsSemanticDefinition(request.languageId)
+            ? "show related usages"
+            : "show related imports/usages";
 
           return {
             range: new monacoApi.Range(
@@ -676,7 +750,7 @@ export function createReviewEditor(
             ),
             contents: [
               {
-                value: `**Review navigation**\n\nTarget: \`${describeNavigationTarget(target)}\`\n\n- Cmd/Ctrl-click: open definition\n- References button: show related imports/usages\n- Peek button: preview target inline`,
+                value: `**Review navigation**\n\nTarget: \`${describeNavigationTarget(target)}\`\n\n- Cmd/Ctrl-click: ${actionLabel}\n- References button: ${referencesLabel}\n- Peek button: preview target inline`,
               },
             ],
           };
@@ -710,7 +784,10 @@ export function createReviewEditor(
     });
 
     monacoRequire(["vs/editor/editor.main"], () => {
-      monacoApi = window.monaco;
+      if (!window.monaco) {
+        return;
+      }
+      monacoApi = window.monaco as MonacoApi;
 
       monacoApi.editor.defineTheme("review-dark", {
         base: "vs-dark",
@@ -764,6 +841,20 @@ export function createReviewEditor(
         lastFocusedSide = "modified";
         emitEditorContextChange();
       });
+      diffEditor.getOriginalEditor().onDidScrollChange(() => {
+        lastFocusedSide = "original";
+        const line =
+          diffEditor?.getOriginalEditor().getVisibleRanges?.()?.[0]
+            ?.startLineNumber;
+        emitEditorContextChange(line);
+      });
+      diffEditor.getModifiedEditor().onDidScrollChange(() => {
+        lastFocusedSide = "modified";
+        const line =
+          diffEditor?.getModifiedEditor().getVisibleRanges?.()?.[0]
+            ?.startLineNumber;
+        emitEditorContextChange(line);
+      });
       registerNavigationSupport();
 
       if (typeof ResizeObserver !== "undefined") {
@@ -798,6 +889,7 @@ export function createReviewEditor(
     revealNavigationTarget,
     getCurrentNavigationTarget,
     getCurrentNavigationRequest,
+    getCurrentSelectionContext,
   };
 }
 

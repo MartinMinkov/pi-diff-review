@@ -1,8 +1,13 @@
 import type {
+  ReviewDefinitionDataMessage,
+  ReviewDefinitionErrorMessage,
   ReviewFileDataMessage,
   ReviewFileErrorMessage,
   ReviewHostMessage,
-} from "../shared/contracts/review.js";
+  ReviewReferencesDataMessage,
+  ReviewReferencesErrorMessage,
+  ReviewSubmitAckMessage,
+} from "../../shared/contracts/review.js";
 
 interface ReviewRuntimeDOM {
   submitButton: HTMLButtonElement;
@@ -21,6 +26,12 @@ interface ReviewRuntimeDOM {
   scopeLastCommitButton: HTMLButtonElement;
   scopeAllButton: HTMLButtonElement;
   sidebarSearchInputEl: HTMLInputElement;
+  sidebarStatusFilterEl: HTMLSelectElement;
+  hideReviewedCheckboxEl: HTMLInputElement;
+  commentedOnlyCheckboxEl: HTMLInputElement;
+  changedOnlyCheckboxEl: HTMLInputElement;
+  changedSymbolsButton: HTMLButtonElement;
+  agentActionButton: HTMLButtonElement;
 }
 
 interface ReviewRuntimeEventHandlers {
@@ -41,11 +52,22 @@ interface ReviewRuntimeEventHandlers {
   onScopeAll: () => void;
   onSidebarSearchInput: (value: string) => void;
   onSidebarSearchClear: () => void;
+  onStatusFilterChange: (value: string) => void;
+  onHideReviewedChange: (checked: boolean) => void;
+  onCommentedOnlyChange: (checked: boolean) => void;
+  onChangedOnlyChange: (checked: boolean) => void;
+  onShowChangedSymbols: () => void;
+  onAgentAction: () => void;
 }
 
 interface ReviewRuntimeMessageHandlers {
   onFileData: (message: ReviewFileDataMessage) => void;
   onFileError: (message: ReviewFileErrorMessage) => void;
+  onDefinitionData: (message: ReviewDefinitionDataMessage) => void;
+  onDefinitionError: (message: ReviewDefinitionErrorMessage) => void;
+  onReferencesData: (message: ReviewReferencesDataMessage) => void;
+  onReferencesError: (message: ReviewReferencesErrorMessage) => void;
+  onSubmitAck: (message: ReviewSubmitAckMessage) => void;
 }
 
 interface ReviewRuntimeOptions {
@@ -86,6 +108,12 @@ export function createReviewRuntimeController(
       scopeLastCommitButton,
       scopeAllButton,
       sidebarSearchInputEl,
+      sidebarStatusFilterEl,
+      hideReviewedCheckboxEl,
+      commentedOnlyCheckboxEl,
+      changedOnlyCheckboxEl,
+      changedSymbolsButton,
+      agentActionButton,
     },
     events: {
       onSubmit,
@@ -105,8 +133,22 @@ export function createReviewRuntimeController(
       onScopeAll,
       onSidebarSearchInput,
       onSidebarSearchClear,
+      onStatusFilterChange,
+      onHideReviewedChange,
+      onCommentedOnlyChange,
+      onChangedOnlyChange,
+      onShowChangedSymbols,
+      onAgentAction,
     },
-    messages: { onFileData, onFileError },
+    messages: {
+      onFileData,
+      onFileError,
+      onDefinitionData,
+      onDefinitionError,
+      onReferencesData,
+      onReferencesError,
+      onSubmitAck,
+    },
   } = options;
 
   function handleHostMessage(message: ReviewHostMessage): void {
@@ -117,6 +159,26 @@ export function createReviewRuntimeController(
     }
     if (message.type === "file-error") {
       onFileError(message);
+      return;
+    }
+    if (message.type === "definition-data") {
+      onDefinitionData(message);
+      return;
+    }
+    if (message.type === "definition-error") {
+      onDefinitionError(message);
+      return;
+    }
+    if (message.type === "references-data") {
+      onReferencesData(message);
+      return;
+    }
+    if (message.type === "references-error") {
+      onReferencesError(message);
+      return;
+    }
+    if (message.type === "submit-ack") {
+      onSubmitAck(message);
     }
   }
 
@@ -150,6 +212,25 @@ export function createReviewRuntimeController(
         onSidebarSearchClear();
       }
     });
+
+    sidebarStatusFilterEl.addEventListener("change", () => {
+      onStatusFilterChange(sidebarStatusFilterEl.value);
+    });
+
+    hideReviewedCheckboxEl.addEventListener("change", () => {
+      onHideReviewedChange(hideReviewedCheckboxEl.checked);
+    });
+
+    commentedOnlyCheckboxEl.addEventListener("change", () => {
+      onCommentedOnlyChange(commentedOnlyCheckboxEl.checked);
+    });
+
+    changedOnlyCheckboxEl.addEventListener("change", () => {
+      onChangedOnlyChange(changedOnlyCheckboxEl.checked);
+    });
+
+    changedSymbolsButton.addEventListener("click", onShowChangedSymbols);
+    agentActionButton.addEventListener("click", onAgentAction);
 
     window.__reviewReceive = handleHostMessage;
   }

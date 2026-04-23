@@ -54,6 +54,21 @@ function formatLocation(
   return `${scopePrefix}${filePath}:${range}${suffix}`;
 }
 
+function formatCommentKind(comment: DiffReviewComment): string {
+  switch (comment.kind) {
+    case "question":
+      return "Question";
+    case "risk":
+      return "Risk";
+    case "explain":
+      return "Explain";
+    case "tests":
+      return "Tests";
+    default:
+      return "Feedback";
+  }
+}
+
 export function composeReviewPrompt(
   files: ReviewFile[],
   payload: ReviewSubmitPayload,
@@ -72,7 +87,9 @@ export function composeReviewPrompt(
 
   payload.comments.forEach((comment, index) => {
     const file = fileMap.get(comment.fileId);
-    lines.push(`${index + 1}. ${formatLocation(comment, file)}`);
+    lines.push(
+      `${index + 1}. [${formatCommentKind(comment)}] ${formatLocation(comment, file)}`,
+    );
     lines.push(`   ${comment.body.trim()}`);
     lines.push("");
   });

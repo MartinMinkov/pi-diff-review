@@ -2,6 +2,10 @@ export interface ReviewDomElements {
   sidebarEl: HTMLDivElement;
   sidebarTitleEl: HTMLDivElement;
   sidebarSearchInputEl: HTMLInputElement;
+  sidebarStatusFilterEl: HTMLSelectElement;
+  hideReviewedCheckboxEl: HTMLInputElement;
+  commentedOnlyCheckboxEl: HTMLInputElement;
+  changedOnlyCheckboxEl: HTMLInputElement;
   toggleSidebarButton: HTMLButtonElement;
   scopeDiffButton: HTMLButtonElement;
   scopeLastCommitButton: HTMLButtonElement;
@@ -15,6 +19,11 @@ export interface ReviewDomElements {
   modeHintEl: HTMLDivElement;
   fileCommentsContainer: HTMLDivElement;
   editorContainerEl: HTMLDivElement;
+  inspectorEl: HTMLDivElement;
+  outlineContainerEl: HTMLDivElement;
+  reviewQueueContainerEl: HTMLDivElement;
+  changedSymbolsButton: HTMLButtonElement;
+  agentActionButton: HTMLButtonElement;
   submitButton: HTMLButtonElement;
   cancelButton: HTMLButtonElement;
   overallCommentButton: HTMLButtonElement;
@@ -34,6 +43,18 @@ export function getReviewDomElements(): ReviewDomElements {
     sidebarTitleEl: document.getElementById("sidebar-title") as HTMLDivElement,
     sidebarSearchInputEl: document.getElementById(
       "sidebar-search-input",
+    ) as HTMLInputElement,
+    sidebarStatusFilterEl: document.getElementById(
+      "sidebar-status-filter",
+    ) as HTMLSelectElement,
+    hideReviewedCheckboxEl: document.getElementById(
+      "hide-reviewed-checkbox",
+    ) as HTMLInputElement,
+    commentedOnlyCheckboxEl: document.getElementById(
+      "commented-only-checkbox",
+    ) as HTMLInputElement,
+    changedOnlyCheckboxEl: document.getElementById(
+      "changed-only-checkbox",
     ) as HTMLInputElement,
     toggleSidebarButton: document.getElementById(
       "toggle-sidebar-button",
@@ -64,6 +85,19 @@ export function getReviewDomElements(): ReviewDomElements {
     editorContainerEl: document.getElementById(
       "editor-container",
     ) as HTMLDivElement,
+    inspectorEl: document.getElementById("inspector") as HTMLDivElement,
+    outlineContainerEl: document.getElementById(
+      "outline-container",
+    ) as HTMLDivElement,
+    reviewQueueContainerEl: document.getElementById(
+      "review-queue-container",
+    ) as HTMLDivElement,
+    changedSymbolsButton: document.getElementById(
+      "changed-symbols-button",
+    ) as HTMLButtonElement,
+    agentActionButton: document.getElementById(
+      "agent-action-button",
+    ) as HTMLButtonElement,
     submitButton: document.getElementById("submit-button") as HTMLButtonElement,
     cancelButton: document.getElementById("cancel-button") as HTMLButtonElement,
     overallCommentButton: document.getElementById(

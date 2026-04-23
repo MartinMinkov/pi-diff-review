@@ -1,4 +1,5 @@
 import type {
+  ChangeStatus,
   DiffReviewComment,
   ReviewFile,
   ReviewFileContents,
@@ -17,6 +18,10 @@ export interface ReviewState {
   scrollPositions: Record<string, ReviewFileScrollState>;
   sidebarCollapsed: boolean;
   fileFilter: string;
+  statusFilter: ChangeStatus | "all";
+  hideReviewedFiles: boolean;
+  showCommentedFilesOnly: boolean;
+  showChangedFilesOnly: boolean;
   fileContents: Record<string, ReviewFileContents>;
   fileErrors: Record<string, string>;
   pendingRequestIds: Record<string, string>;
@@ -53,6 +58,10 @@ export function createInitialReviewState(reviewData: {
     scrollPositions: {},
     sidebarCollapsed: false,
     fileFilter: "",
+    statusFilter: "all",
+    hideReviewedFiles: false,
+    showCommentedFilesOnly: false,
+    showChangedFilesOnly: false,
     fileContents: {},
     fileErrors: {},
     pendingRequestIds: {},

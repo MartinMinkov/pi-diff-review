@@ -1,30 +1,13 @@
 import type {
   ReviewFile,
   ReviewGoModule,
+  ReviewNavigationRequest,
+  ReviewNavigationSide,
+  ReviewNavigationTarget,
   ReviewScope,
   ReviewWindowData,
 } from "../../shared/contracts/review.js";
-
-export type ReviewNavigationSide = "original" | "modified";
-
-export interface ReviewNavigationRequest {
-  fileId: string;
-  scope: ReviewScope;
-  side: ReviewNavigationSide;
-  sourcePath: string;
-  languageId: string;
-  content: string;
-  lineNumber: number;
-  column: number;
-}
-
-export interface ReviewNavigationTarget {
-  fileId: string;
-  scope: ReviewScope;
-  side: ReviewNavigationSide;
-  line: number;
-  column: number;
-}
+import type { MonacoUriFactory } from "../editor/monaco-types.js";
 
 export interface ReviewReferenceSearchFile {
   fileId: string;
@@ -50,7 +33,7 @@ export interface ReviewModelDescriptor {
   sourcePath: string;
 }
 
-interface ReviewNavigationResolver {
+export interface ReviewNavigationResolver {
   resolveTarget: (
     request: ReviewNavigationRequest,
   ) => ReviewNavigationTarget | null;
@@ -58,8 +41,14 @@ interface ReviewNavigationResolver {
     request: ReviewNavigationRequest,
     files: ReviewReferenceSearchFile[],
   ) => ReviewReferenceMatch[];
-  buildModelUri: (monacoApi: any, descriptor: ReviewModelDescriptor) => unknown;
-  buildTargetUri: (monacoApi: any, target: ReviewNavigationTarget) => unknown;
+  buildModelUri: (
+    monacoApi: MonacoUriFactory,
+    descriptor: ReviewModelDescriptor,
+  ) => unknown;
+  buildTargetUri: (
+    monacoApi: MonacoUriFactory,
+    target: ReviewNavigationTarget,
+  ) => unknown;
   parseModelUri: (uri: unknown) => ReviewModelDescriptor | null;
   parseTargetUri: (uri: unknown) => ReviewNavigationTarget | null;
 }
@@ -78,6 +67,7 @@ interface ReviewNavigationContext {
 const REVIEW_MODEL_SCHEME = "review-model";
 const REVIEW_TARGET_SCHEME = "review-target";
 const TS_LIKE_EXTENSIONS = [
+  ".d.ts",
   ".ts",
   ".tsx",
   ".mts",
@@ -108,7 +98,7 @@ export function createReviewNavigationResolver(
     .sort((a, b) => b.length - a.length);
 
   function buildModelUri(
-    monacoApi: any,
+    monacoApi: MonacoUriFactory,
     descriptor: ReviewModelDescriptor,
   ): unknown {
     return monacoApi.Uri.from({
@@ -122,7 +112,7 @@ export function createReviewNavigationResolver(
   }
 
   function buildTargetUri(
-    monacoApi: any,
+    monacoApi: MonacoUriFactory,
     target: ReviewNavigationTarget,
   ): unknown {
     return monacoApi.Uri.from({
@@ -360,6 +350,7 @@ function collectTsLikeRequests(
   const lines = file.content.split(/\r?\n/);
   const patterns = [
     /\bfrom\s+(["'])([^"']+)\1/g,
+    /\bexport\s+(?:type\s+)?(?:\*|\*\s+as\s+[A-Za-z_$][\w$]*|\{[^}]+\})\s+from\s+(["'])([^"']+)\1/g,
     /\bimport\s*\(\s*(["'])([^"']+)\1/g,
     /\brequire\s*\(\s*(["'])([^"']+)\1/g,
     /^\s*import\s+(["'])([^"']+)\1/g,
@@ -861,5 +852,3 @@ function isReviewScope(value: string | null): value is ReviewScope {
 function isNavigationSide(value: string | null): value is ReviewNavigationSide {
   return value === "original" || value === "modified";
 }
-
-export type { ReviewNavigationResolver };

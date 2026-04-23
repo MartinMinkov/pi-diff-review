@@ -9,6 +9,7 @@
       @theme {
         --color-review-bg: #0d1117;
         --color-review-panel: #161b22;
+        --color-review-panel-2: #11161d;
         --color-review-border: #30363d;
         --color-review-text: #c9d1d9;
         --color-review-muted: #8b949e;
@@ -53,9 +54,47 @@
         width: min(760px, 92vw);
         background: #161b22;
         border: 1px solid #30363d;
-        border-radius: 12px;
+        border-radius: 8px;
         box-shadow: 0 16px 64px rgba(0, 0, 0, 0.5);
         padding: 24px;
+      }
+
+      .review-surface {
+        background:
+          linear-gradient(180deg, rgba(88, 166, 255, 0.05), transparent 22%),
+          #0d1117;
+      }
+
+      .review-panel-section {
+        border-bottom: 1px solid #30363d;
+        padding: 16px;
+      }
+
+      .review-panel-heading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+
+      .review-panel-title {
+        font-size: 11px;
+        line-height: 16px;
+        text-transform: uppercase;
+        color: #8b949e;
+        font-weight: 700;
+      }
+
+      .review-kbd {
+        border: 1px solid #30363d;
+        border-bottom-color: #21262d;
+        background: #11161d;
+        color: #c9d1d9;
+        border-radius: 6px;
+        padding: 1px 6px;
+        font-size: 11px;
+        font-weight: 600;
       }
 
       #editor-container {
@@ -127,14 +166,14 @@
   <body
     class="h-full overflow-hidden bg-review-bg text-review-text antialiased"
   >
-    <div id="root-layout" class="flex h-full w-full flex-col">
+    <div id="root-layout" class="review-surface flex h-full w-full flex-col">
       <div
-        class="flex items-center justify-between gap-4 border-b border-review-border bg-[#010409] px-4 py-3"
+        class="flex items-center justify-between gap-4 border-b border-review-border bg-[#0b1016]/95 px-5 py-3 backdrop-blur"
       >
         <div class="min-w-0 flex items-center gap-3">
           <button
             id="toggle-sidebar-button"
-            class="cursor-pointer rounded-md border border-review-border bg-review-panel px-3 py-1.5 text-xs font-medium text-review-text hover:bg-[#21262d]"
+            class="cursor-pointer rounded-md border border-review-border bg-review-panel-2 px-3 py-1.5 text-xs font-medium text-review-text hover:bg-[#1a212b]"
           >
             Hide sidebar
           </button>
@@ -155,13 +194,13 @@
           ></div>
           <button
             id="overall-comment-button"
-            class="cursor-pointer rounded-md border border-review-border bg-review-panel px-3 py-1.5 text-xs font-medium text-review-text hover:bg-[#21262d]"
+            class="cursor-pointer rounded-md border border-review-border bg-review-panel-2 px-3 py-1.5 text-xs font-medium text-review-text hover:bg-[#1a212b]"
           >
             Overall note
           </button>
           <button
             id="cancel-button"
-            class="cursor-pointer rounded-md border border-review-border bg-review-panel px-3 py-1.5 text-xs font-medium text-review-text hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30"
+            class="cursor-pointer rounded-md border border-review-border bg-review-panel-2 px-3 py-1.5 text-xs font-medium text-review-text hover:border-red-500/30 hover:bg-red-500/10 hover:text-red-400"
           >
             Cancel
           </button>
@@ -177,7 +216,7 @@
       <div id="content-layout" class="flex min-h-0 flex-1">
         <aside
           id="sidebar"
-          class="flex min-h-0 shrink-0 flex-col border-r border-review-border bg-[#0d1117]"
+          class="flex min-h-0 shrink-0 flex-col border-r border-review-border bg-[#0d1117]/90"
           style="
             width: 280px;
             min-width: 280px;
@@ -185,15 +224,10 @@
             overflow: hidden;
           "
         >
-          <div class="border-b border-review-border px-4 py-3">
-            <div class="mb-2 flex items-center justify-between gap-2">
-              <div
-                id="sidebar-title"
-                class="text-[11px] font-semibold uppercase tracking-wider text-review-muted"
-              >
-                Files
-              </div>
-              <div class="text-[10px] text-review-muted">Fuzzy filter</div>
+          <div class="review-panel-section">
+            <div class="review-panel-heading">
+              <div id="sidebar-title" class="review-panel-title">Files</div>
+              <div class="text-[10px] text-review-muted">Code search</div>
             </div>
             <div class="mb-3 flex flex-wrap items-center gap-2">
               <button
@@ -220,93 +254,176 @@
               type="text"
               spellcheck="false"
               autocomplete="off"
-              placeholder="Search files"
+              placeholder="Search code"
               class="w-full rounded-md border border-review-border bg-review-panel px-3 py-2 text-sm text-review-text outline-none placeholder:text-review-muted focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
             />
+            <div class="mt-3 grid grid-cols-1 gap-2">
+              <label
+                class="text-[10px] font-medium uppercase tracking-wide text-review-muted"
+                for="sidebar-status-filter"
+                >Status</label
+              >
+              <select
+                id="sidebar-status-filter"
+                class="w-full rounded-md border border-review-border bg-review-panel px-3 py-2 text-sm text-review-text outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              >
+                <option value="all">All statuses</option>
+                <option value="modified">Modified</option>
+                <option value="added">Added</option>
+                <option value="deleted">Deleted</option>
+                <option value="renamed">Renamed</option>
+              </select>
+            </div>
+            <div class="mt-3 space-y-2 text-[12px] text-review-text">
+              <label class="flex items-center gap-2">
+                <input
+                  id="hide-reviewed-checkbox"
+                  type="checkbox"
+                  class="h-4 w-4 rounded border-review-border bg-review-panel text-review-accent focus:ring-review-accent"
+                />
+                <span>Hide reviewed</span>
+              </label>
+              <label class="flex items-center gap-2">
+                <input
+                  id="commented-only-checkbox"
+                  type="checkbox"
+                  class="h-4 w-4 rounded border-review-border bg-review-panel text-review-accent focus:ring-review-accent"
+                />
+                <span>Only commented</span>
+              </label>
+              <label class="flex items-center gap-2">
+                <input
+                  id="changed-only-checkbox"
+                  type="checkbox"
+                  class="h-4 w-4 rounded border-review-border bg-review-panel text-review-accent focus:ring-review-accent"
+                />
+                <span>Only changed files</span>
+              </label>
+            </div>
           </div>
           <div
             id="file-tree"
-            class="scrollbar-thin min-h-0 flex-1 overflow-auto px-2 pb-2"
+            class="scrollbar-thin min-h-0 flex-1 overflow-auto px-2 pb-3"
           ></div>
         </aside>
 
-        <main
-          id="main-pane"
-          class="flex min-h-0 min-w-0 flex-1 flex-col bg-[#0d1117]"
-        >
-          <div
-            class="flex items-center justify-between gap-4 border-b border-review-border bg-[#0d1117] px-4 py-2"
+        <main id="main-pane" class="flex min-h-0 min-w-0 flex-1 bg-[#0d1117]">
+          <section class="flex min-h-0 min-w-0 flex-1 flex-col border-r border-review-border">
+            <div
+              class="flex items-center justify-between gap-4 border-b border-review-border bg-[#0f141b]/92 px-4 py-3 backdrop-blur"
+            >
+              <div class="min-w-0">
+                <div
+                  id="current-file-label"
+                  class="truncate text-sm font-semibold text-white"
+                ></div>
+                <div
+                  id="current-symbol-label"
+                  class="mt-0.5 truncate text-[11px] text-[#d29922]"
+                ></div>
+                <div id="mode-hint" class="mt-1 text-[11px] text-review-muted"></div>
+              </div>
+              <div class="flex flex-wrap items-center justify-end gap-2">
+                <button
+                  id="navigate-back-button"
+                  class="cursor-pointer rounded-md border border-review-border bg-review-panel-2 px-3 py-1.5 text-xs font-medium text-review-text hover:bg-[#1a212b] disabled:cursor-default disabled:opacity-50 disabled:hover:bg-review-panel-2"
+                >
+                  Back
+                </button>
+                <button
+                  id="navigate-forward-button"
+                  class="cursor-pointer rounded-md border border-review-border bg-review-panel-2 px-3 py-1.5 text-xs font-medium text-review-text hover:bg-[#1a212b] disabled:cursor-default disabled:opacity-50 disabled:hover:bg-review-panel-2"
+                >
+                  Forward
+                </button>
+                <button
+                  id="show-references-button"
+                  class="cursor-pointer rounded-md border border-review-border bg-review-panel-2 px-3 py-1.5 text-xs font-medium text-review-text hover:bg-[#1a212b] disabled:cursor-default disabled:opacity-50 disabled:hover:bg-review-panel-2"
+                >
+                  References
+                </button>
+                <button
+                  id="peek-definition-button"
+                  class="cursor-pointer rounded-md border border-review-border bg-review-panel-2 px-3 py-1.5 text-xs font-medium text-review-text hover:bg-[#1a212b] disabled:cursor-default disabled:opacity-50 disabled:hover:bg-review-panel-2"
+                >
+                  Peek
+                </button>
+                <button
+                  id="toggle-reviewed-button"
+                  class="cursor-pointer rounded-md border border-review-border bg-review-panel-2 px-3 py-1.5 text-xs font-medium text-review-text hover:bg-[#1a212b]"
+                >
+                  Mark reviewed
+                </button>
+                <button
+                  id="toggle-wrap-button"
+                  class="cursor-pointer rounded-md border border-review-border bg-review-panel-2 px-3 py-1.5 text-xs font-medium text-review-text hover:bg-[#1a212b]"
+                >
+                  Wrap lines: on
+                </button>
+                <button
+                  id="toggle-unchanged-button"
+                  class="cursor-pointer rounded-md border border-review-border bg-review-panel-2 px-3 py-1.5 text-xs font-medium text-review-text hover:bg-[#1a212b]"
+                >
+                  Show changed areas only
+                </button>
+                <button
+                  id="file-comment-button"
+                  class="cursor-pointer rounded-md border border-review-border bg-review-panel-2 px-3 py-1.5 text-xs font-medium text-review-text hover:bg-[#1a212b]"
+                >
+                  Add file comment
+                </button>
+              </div>
+            </div>
+            <div
+              id="file-comments-container"
+              class="hidden border-b border-review-border bg-[#0d1117] px-4 py-0"
+            ></div>
+            <div id="editor-container" class="min-h-0 min-w-0 flex-1"></div>
+          </section>
+
+          <aside
+            id="inspector"
+            class="scrollbar-thin flex min-h-0 w-[320px] min-w-[320px] flex-col overflow-auto bg-[#0f141b]/92"
           >
-            <div class="min-w-0">
-              <div
-                id="current-file-label"
-                class="truncate text-sm font-semibold text-white"
-              ></div>
-              <div
-                id="current-symbol-label"
-                class="mt-0.5 truncate text-[11px] text-[#d29922]"
-              ></div>
-              <div
-                id="mode-hint"
-                class="mt-0.5 text-[11px] text-review-muted"
-              ></div>
+            <div class="review-panel-section">
+              <div class="review-panel-heading">
+                <div class="review-panel-title">Review tools</div>
+                <div class="flex items-center gap-1">
+                  <span class="review-kbd">S</span>
+                  <span class="review-kbd">E</span>
+                </div>
+              </div>
+              <div class="grid grid-cols-1 gap-2">
+                <button
+                  id="changed-symbols-button"
+                  class="cursor-pointer rounded-md border border-review-border bg-review-panel-2 px-3 py-2 text-left text-sm font-medium text-review-text hover:bg-[#1a212b]"
+                >
+                  Jump through changed symbols
+                </button>
+                <button
+                  id="agent-action-button"
+                  class="cursor-pointer rounded-md border border-review-border bg-review-panel-2 px-3 py-2 text-left text-sm font-medium text-review-text hover:bg-[#1a212b]"
+                >
+                  Ask agent about selection
+                </button>
+              </div>
+              <div class="mt-3 text-[11px] leading-5 text-review-muted">
+                Use the current selection, symbol, or file to create focused review prompts without leaving the diff.
+              </div>
             </div>
-            <div class="flex items-center gap-3">
-              <button
-                id="navigate-back-button"
-                class="cursor-pointer rounded-md border border-review-border bg-review-panel px-3 py-1 text-xs font-medium text-review-text hover:bg-[#21262d] disabled:cursor-default disabled:opacity-50 disabled:hover:bg-review-panel"
-              >
-                Back
-              </button>
-              <button
-                id="navigate-forward-button"
-                class="cursor-pointer rounded-md border border-review-border bg-review-panel px-3 py-1 text-xs font-medium text-review-text hover:bg-[#21262d] disabled:cursor-default disabled:opacity-50 disabled:hover:bg-review-panel"
-              >
-                Forward
-              </button>
-              <button
-                id="show-references-button"
-                class="cursor-pointer rounded-md border border-review-border bg-review-panel px-3 py-1 text-xs font-medium text-review-text hover:bg-[#21262d] disabled:cursor-default disabled:opacity-50 disabled:hover:bg-review-panel"
-              >
-                References
-              </button>
-              <button
-                id="peek-definition-button"
-                class="cursor-pointer rounded-md border border-review-border bg-review-panel px-3 py-1 text-xs font-medium text-review-text hover:bg-[#21262d] disabled:cursor-default disabled:opacity-50 disabled:hover:bg-review-panel"
-              >
-                Peek
-              </button>
-              <button
-                id="toggle-reviewed-button"
-                class="cursor-pointer rounded-md border border-review-border bg-review-panel px-3 py-1 text-xs font-medium text-review-text hover:bg-[#21262d]"
-              >
-                Mark reviewed
-              </button>
-              <button
-                id="toggle-wrap-button"
-                class="cursor-pointer rounded-md border border-review-border bg-review-panel px-3 py-1 text-xs font-medium text-review-text hover:bg-[#21262d]"
-              >
-                Wrap lines: on
-              </button>
-              <button
-                id="toggle-unchanged-button"
-                class="cursor-pointer rounded-md border border-review-border bg-review-panel px-3 py-1 text-xs font-medium text-review-text hover:bg-[#21262d]"
-              >
-                Show changed areas only
-              </button>
-              <button
-                id="file-comment-button"
-                class="cursor-pointer rounded-md border border-review-border bg-review-panel px-3 py-1 text-xs font-medium text-review-text hover:bg-[#21262d]"
-              >
-                Add file comment
-              </button>
+            <div class="review-panel-section">
+              <div class="review-panel-heading">
+                <div class="review-panel-title">Review queue</div>
+              </div>
+              <div id="review-queue-container" class="space-y-2"></div>
             </div>
-          </div>
-          <div
-            id="file-comments-container"
-            class="hidden border-b border-review-border bg-[#0d1117] px-4 py-0"
-          ></div>
-          <div id="editor-container" class="min-h-0 min-w-0 flex-1"></div>
+            <div class="min-h-0 flex-1 review-panel-section">
+              <div class="review-panel-heading">
+                <div class="review-panel-title">Outline</div>
+              </div>
+              <div id="outline-container" class="space-y-1"></div>
+            </div>
+          </aside>
         </main>
       </div>
     </div>

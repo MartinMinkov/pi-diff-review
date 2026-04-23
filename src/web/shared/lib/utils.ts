@@ -13,7 +13,7 @@ export function escapeHtml(value: unknown): string {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/\"/g, "&quot;");
+    .replace(/"/g, "&quot;");
 }
 
 export function inferLanguage(path: string): string {
@@ -56,11 +56,11 @@ export function scopeLabel(scope: ReviewScope): string {
 export function scopeHint(scope: ReviewScope): string {
   switch (scope) {
     case "git-diff":
-      return "Review working tree changes against HEAD. Hover or click line numbers in the gutter to add an inline comment. Cmd/Ctrl-click repo-local imports to jump to the referenced file, or use References for related review context.";
+      return "Working tree against HEAD. Use gutter clicks for inline comments, Cmd/Ctrl-click for navigation when supported, F to search code, Cmd/Ctrl+P to jump to files, S for changed symbols, E to ask the agent about the current selection, and Cmd/Ctrl+Shift+P for clipboard commands.";
     case "last-commit":
-      return "Review the last commit against its parent. Hover or click line numbers in the gutter to add an inline comment. Cmd/Ctrl-click repo-local imports to jump to the referenced file, or use References for related review context.";
+      return "Last commit against its parent. Use gutter clicks for inline comments, Cmd/Ctrl-click for navigation when supported, F to search code, Cmd/Ctrl+P to jump to files, S for changed symbols, E to ask the agent about the current selection, and Cmd/Ctrl+Shift+P for clipboard commands.";
     default:
-      return "Review the current working tree snapshot. Hover or click line numbers in the gutter to add a code review comment. Cmd/Ctrl-click repo-local imports to jump to the referenced file, or use References for related review context.";
+      return "Current working tree snapshot. Use gutter clicks for inline comments, Cmd/Ctrl-click for navigation when supported, F to search code, Cmd/Ctrl+P to jump to files, S for changed symbols, E to ask the agent about the current selection, and Cmd/Ctrl+Shift+P for clipboard commands.";
   }
 }
 
