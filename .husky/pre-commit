@@ -1,10 +1,38 @@
 #!/bin/sh
 
-echo "Running TypeScript check..."
-npm run check
-if [ $? -ne 0 ]; then
-  echo "Checks failed. Please fix the errors before committing."
+set -e
+
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+
+if [ -z "$NVM_DIR" ] && [ -d "$HOME/.nvm" ]; then
+  export NVM_DIR="$HOME/.nvm"
+fi
+
+if [ -n "$NVM_DIR" ] && [ -s "$NVM_DIR/nvm.sh" ]; then
+  # shellcheck disable=SC1090
+  . "$NVM_DIR/nvm.sh"
+  nvm use --silent >/dev/null 2>&1 || true
+fi
+
+for node_bin in "$HOME"/.nvm/versions/node/*/bin; do
+  if [ -d "$node_bin" ]; then
+    export PATH="$node_bin:$PATH"
+  fi
+done
+
+PNPM_BIN="$(command -v pnpm || true)"
+if [ -z "$PNPM_BIN" ]; then
+  echo "pnpm was not found in PATH."
   exit 1
 fi
+
+echo "Running TypeScript checks..."
+"$PNPM_BIN" run check
+"$PNPM_BIN" run check:web
+
+echo "Rebuilding web dist..."
+"$PNPM_BIN" run build:web
+
+git add dist/web
 
 echo "Pre-commit checks passed."
