@@ -131,22 +131,18 @@ export class LspDefinitionClient {
     method: string,
     params: unknown,
   ): Promise<ResolvedNavigationLocation[]> {
-    try {
-      await this.ensureInitialized();
+    await this.ensureInitialized();
 
-      const documentPath = join(this.repoRoot, request.sourcePath);
-      const documentUri = pathToFileURL(documentPath).href;
-      await this.syncDocument(documentUri, request.content);
+    const documentPath = join(this.repoRoot, request.sourcePath);
+    const documentUri = pathToFileURL(documentPath).href;
+    await this.syncDocument(documentUri, request.content);
 
-      const result = await this.request(method, {
-        textDocument: { uri: documentUri },
-        ...(params as Record<string, unknown>),
-      });
+    const result = await this.request(method, {
+      textDocument: { uri: documentUri },
+      ...(params as Record<string, unknown>),
+    });
 
-      return this.extractLocations(result);
-    } catch {
-      return [];
-    }
+    return this.extractLocations(result);
   }
 
   async dispose(): Promise<void> {

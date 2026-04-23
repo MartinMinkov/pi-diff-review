@@ -3468,8 +3468,16 @@ Target: \`${describeNavigationTarget(target)}\`
       pendingReferencesWaiters.set(requestId, waiters);
     });
   }
+  function getNavigationErrorMessage(languageId, error) {
+    const detail = error instanceof Error ? error.message.trim() : String(error || "").trim();
+    const label = languageId === "rust" ? "Rust navigation unavailable" : languageId === "go" ? "Go navigation unavailable" : "Definition lookup unavailable";
+    return detail ? `${label}: ${detail}` : label;
+  }
   async function resolveDefinitionTarget(request) {
-    const semanticTarget = supportsSemanticDefinition(request.languageId) ? await requestDefinitionTarget(request).catch(() => null) : null;
+    const semanticTarget = supportsSemanticDefinition(request.languageId) ? await requestDefinitionTarget(request).catch((error) => {
+      flashSummary(getNavigationErrorMessage(request.languageId, error));
+      return null;
+    }) : null;
     return semanticTarget ?? navigationResolver.resolveTarget(request);
   }
   function getCurrentNavigationTarget() {
@@ -3625,7 +3633,10 @@ Target: \`${describeNavigationTarget(target)}\`
     try {
       let matches;
       if (supportsSemanticDefinition(request.languageId)) {
-        const semanticTargets = await requestReferenceTargets(request).catch(() => []) ?? [];
+        const semanticTargets = await requestReferenceTargets(request).catch((error) => {
+          flashSummary(getNavigationErrorMessage(request.languageId, error));
+          return [];
+        }) ?? [];
         const semanticItems = await Promise.all(semanticTargets.map(async (target2) => {
           const file = reviewData.files.find((item) => item.id === target2.fileId);
           const contents = await loadFileContents(target2.fileId, target2.scope);

@@ -397,13 +397,30 @@ function requestReferenceTargets(
   });
 }
 
+function getNavigationErrorMessage(
+  languageId: string,
+  error: unknown,
+): string {
+  const detail =
+    error instanceof Error ? error.message.trim() : String(error || "").trim();
+  const label =
+    languageId === "rust"
+      ? "Rust navigation unavailable"
+      : languageId === "go"
+        ? "Go navigation unavailable"
+        : "Definition lookup unavailable";
+  return detail ? `${label}: ${detail}` : label;
+}
+
 async function resolveDefinitionTarget(
   request: ReviewNavigationRequest,
 ): Promise<ReviewNavigationTarget | null> {
-  const semanticTarget =
-    supportsSemanticDefinition(request.languageId)
-      ? await requestDefinitionTarget(request).catch(() => null)
-      : null;
+  const semanticTarget = supportsSemanticDefinition(request.languageId)
+    ? await requestDefinitionTarget(request).catch((error: unknown) => {
+        flashSummary(getNavigationErrorMessage(request.languageId, error));
+        return null;
+      })
+    : null;
   return semanticTarget ?? navigationResolver.resolveTarget(request);
 }
 
@@ -647,7 +664,10 @@ async function handleShowReferences() {
 
     if (supportsSemanticDefinition(request.languageId)) {
       const semanticTargets =
-        (await requestReferenceTargets(request).catch(() => [])) ?? [];
+        (await requestReferenceTargets(request).catch((error: unknown) => {
+          flashSummary(getNavigationErrorMessage(request.languageId, error));
+          return [];
+        })) ?? [];
       const semanticItems = await Promise.all(
         semanticTargets.map(async (target) => {
           const file = reviewData.files.find((item) => item.id === target.fileId);
