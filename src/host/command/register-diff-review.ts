@@ -325,10 +325,12 @@ export default function (pi: ExtensionAPI) {
               });
               setTimeout(() => {
                 settle(message);
+                closeActiveWindow();
               }, 40);
               return;
             }
             settle(message);
+            closeActiveWindow();
           }
         };
 
@@ -369,8 +371,8 @@ export default function (pi: ExtensionAPI) {
           : await terminalMessagePromise;
 
       waitingUI.dismiss();
-      await waitingUI.promise;
       closeActiveWindow();
+      await waitingUI.promise;
 
       if (message == null || message.type === "cancel") {
         ctx.ui.notify("Review cancelled.", "info");
