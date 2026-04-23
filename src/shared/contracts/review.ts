@@ -28,6 +28,7 @@ export interface ReviewFileContents {
 }
 
 export type CommentSide = "original" | "modified" | "file";
+export type DiffReviewCommentStatus = "draft" | "submitted";
 
 export interface DiffReviewComment {
   id: string;
@@ -37,6 +38,8 @@ export interface DiffReviewComment {
   startLine: number | null;
   endLine: number | null;
   body: string;
+  status: DiffReviewCommentStatus;
+  collapsed: boolean;
 }
 
 export interface ReviewSubmitPayload {

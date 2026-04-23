@@ -616,6 +616,8 @@ function addInlineComment(
     startLine: line,
     endLine: line,
     body: "",
+    status: "draft",
+    collapsed: false,
   });
 }
 
@@ -628,8 +630,8 @@ editorController = createReviewEditor({
   getScopeDisplayPath,
   getRequestState,
   ensureFileLoaded,
-  renderCommentDOM: (comment, onDelete) =>
-    commentManager?.renderCommentDOM(comment, onDelete) ??
+  renderCommentDOM: (comment, options) =>
+    commentManager?.renderCommentDOM(comment, options) ??
     document.createElement("div"),
   addInlineComment,
   onCommentsChange: () => {
@@ -681,6 +683,8 @@ function showFileCommentModal() {
         startLine: null,
         endLine: null,
         body: value,
+        status: "submitted",
+        collapsed: false,
       });
       submitButton.disabled = false;
       updateCommentsUI();
@@ -772,7 +776,10 @@ function handleSubmitReview() {
     overallComment: state.overallComment.trim(),
     comments: state.comments
       .map((comment) => ({ ...comment, body: comment.body.trim() }))
-      .filter((comment) => comment.body.length > 0),
+      .filter(
+        (comment) =>
+          comment.status === "submitted" && comment.body.length > 0,
+      ),
   };
   window.glimpse.send(payload);
   window.glimpse.close();

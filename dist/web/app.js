@@ -197,6 +197,17 @@
       ensureActiveFileForScope,
       activeFileShowsDiff
     } = options;
+    function getSubmittedCommentCount(fileId) {
+      return state.comments.filter((comment) => {
+        if (comment.status !== "submitted")
+          return false;
+        if (comment.scope !== state.currentScope)
+          return false;
+        if (fileId != null && comment.fileId !== fileId)
+          return false;
+        return true;
+      }).length;
+    }
     function renderTreeNode(node, depth) {
       const children = [...node.children.values()].sort((a, b) => {
         if (a.kind !== b.kind)
@@ -229,7 +240,7 @@
         const file = child.file;
         if (!file)
           continue;
-        const count = state.comments.filter((comment) => comment.fileId === file.id && comment.scope === state.currentScope).length;
+        const count = getSubmittedCommentCount(file.id);
         const reviewed = isFileReviewed(file.id);
         const requestState = getRequestState(file.id, state.currentScope);
         const loading = requestState.requestId != null && requestState.contents == null;
@@ -261,7 +272,7 @@
         const path = getFileSearchPath(file);
         const baseName = getBaseName(path);
         const parentPath = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
-        const count = state.comments.filter((comment) => comment.fileId === file.id && comment.scope === state.currentScope).length;
+        const count = getSubmittedCommentCount(file.id);
         const reviewed = isFileReviewed(file.id);
         const requestState = getRequestState(file.id, state.currentScope);
         const loading = requestState.requestId != null && requestState.contents == null;
@@ -346,7 +357,7 @@
         renderTreeNode(buildTree(visibleFiles), 0);
       }
       sidebarTitleEl.textContent = scopeLabel2(state.currentScope);
-      const comments = state.comments.length;
+      const comments = getSubmittedCommentCount();
       const filteredSuffix = state.fileFilter.trim() ? ` • ${visibleFiles.length} shown` : "";
       summaryEl.textContent = `${scopedFiles.length} file(s) • ${comments} comment(s)${state.overallComment ? " • overall note" : ""}${filteredSuffix}`;
       updateToggleButtons();
@@ -583,41 +594,89 @@
         close();
     });
   }
-  function renderCommentDOM(comment, scopeLabel2, onDelete) {
+  function renderCommentDOM(comment, scopeLabel2, options) {
     const container = document.createElement("div");
     container.className = "view-zone-container";
     const title = comment.side === "file" ? `File comment • ${scopeLabel2(comment.scope)}` : `${comment.side === "original" ? "Original" : "Modified"} line ${comment.startLine} • ${scopeLabel2(comment.scope)}`;
-    container.innerHTML = `
-    <div class="mb-2 flex items-center justify-between gap-3">
-      <div class="text-xs font-semibold text-review-text">${escapeHtml(title)}</div>
-      <button data-action="delete" class="cursor-pointer rounded-md border border-transparent bg-transparent px-2 py-1 text-xs font-medium text-review-muted hover:bg-red-500/10 hover:text-red-400">Delete</button>
-    </div>
-    <textarea data-comment-id="${escapeHtml(comment.id)}" rows="6" class="scrollbar-thin min-h-[140px] w-full resize-y overflow-auto rounded-md border border-review-border bg-[#010409] px-3 py-2 text-sm text-review-text outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Leave a comment"></textarea>
-  `;
-    const textarea = container.querySelector("textarea");
-    const deleteButton = container.querySelector("[data-action='delete']");
-    if (!textarea) {
+    if (comment.status === "draft") {
+      container.innerHTML = `
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <div class="text-xs font-semibold text-review-text">${escapeHtml(title)}</div>
+        <div class="flex items-center gap-2">
+          <button data-action="cancel" class="cursor-pointer rounded-md border border-review-border bg-review-panel px-3 py-1.5 text-xs font-medium text-review-text hover:bg-[#21262d]">Cancel</button>
+          <button data-action="submit" class="cursor-pointer rounded-md border border-[rgba(240,246,252,0.1)] bg-[#238636] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#2ea043] disabled:cursor-not-allowed disabled:opacity-50">Submit</button>
+        </div>
+      </div>
+      <textarea data-comment-id="${escapeHtml(comment.id)}" rows="6" class="scrollbar-thin min-h-[140px] w-full resize-y overflow-auto rounded-md border border-review-border bg-[#010409] px-3 py-2 text-sm text-review-text outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Leave a comment"></textarea>
+    `;
+      const textarea = container.querySelector("textarea");
+      const cancelButton = container.querySelector("[data-action='cancel']");
+      const submitButton = container.querySelector("[data-action='submit']");
+      if (!textarea) {
+        return container;
+      }
+      textarea.value = comment.body || "";
+      setupPasteHandler(textarea);
+      const syncSubmitState = () => {
+        if (!submitButton)
+          return;
+        submitButton.disabled = textarea.value.trim().length === 0;
+      };
+      textarea.addEventListener("input", () => {
+        comment.body = textarea.value;
+        syncSubmitState();
+      });
+      cancelButton?.addEventListener("click", options.onDelete);
+      submitButton?.addEventListener("click", () => {
+        const body = textarea.value.trim();
+        if (!body)
+          return;
+        comment.body = body;
+        comment.status = "submitted";
+        comment.collapsed = true;
+        options.onUpdate();
+      });
+      syncSubmitState();
+      if (!comment.body) {
+        setTimeout(() => textarea.focus(), 50);
+      }
       return container;
     }
-    textarea.value = comment.body || "";
-    setupPasteHandler(textarea);
-    textarea.addEventListener("input", () => {
-      comment.body = textarea.value;
+    const preview = comment.body.trim().split(`
+`)[0] || "Comment";
+    const toggleLabel = comment.collapsed ? "Expand comment" : "Collapse comment";
+    container.innerHTML = `
+    <div class="rounded-md border border-review-border bg-review-panel">
+      <div class="flex items-center gap-2 px-3 py-2">
+        <button data-action="toggle" aria-label="${escapeHtml(toggleLabel)}" class="flex min-w-0 flex-1 items-center gap-2 text-left">
+          <svg class="h-3.5 w-3.5 shrink-0 text-review-muted transition-transform ${comment.collapsed ? "-rotate-90" : ""}" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+            <path d="M12.78 6.22a.749.749 0 0 1 0 1.06l-4.25 4.25a.749.749 0 0 1-1.06 0L3.22 7.28a.749.749 0 0 1 1.06-1.06L8 9.939l3.72-3.719a.749.749 0 0 1 1.06 0Z"></path>
+          </svg>
+          <span class="min-w-0 flex-1">
+            <span class="block truncate text-xs font-semibold text-review-text">${escapeHtml(title)}</span>
+            ${comment.collapsed ? `<span class="mt-0.5 block truncate text-xs text-review-muted">${escapeHtml(preview)}</span>` : ""}
+          </span>
+        </button>
+        ${comment.collapsed ? "" : `<button data-action="delete" class="cursor-pointer rounded-md border border-transparent bg-transparent px-2 py-1 text-xs font-medium text-review-muted hover:bg-red-500/10 hover:text-red-400">Delete</button>`}
+      </div>
+      ${comment.collapsed ? "" : `<div class="border-t border-review-border px-3 py-3 whitespace-pre-wrap break-words text-sm text-review-text">${escapeHtml(comment.body)}</div>`}
+    </div>
+  `;
+    const toggleButton = container.querySelector("[data-action='toggle']");
+    const deleteButton = container.querySelector("[data-action='delete']");
+    toggleButton?.addEventListener("click", () => {
+      comment.collapsed = !comment.collapsed;
+      options.onUpdate();
     });
-    if (deleteButton) {
-      deleteButton.addEventListener("click", onDelete);
-    }
-    if (!comment.body) {
-      setTimeout(() => textarea.focus(), 50);
-    }
+    deleteButton?.addEventListener("click", options.onDelete);
     return container;
   }
 
   // src/web/features/comments/comment-manager.ts
   function createCommentManager(options) {
     const { state, activeFile, scopeLabel: scopeLabel2, fileCommentsContainer } = options;
-    function renderCommentDOM2(comment, onDelete) {
-      return renderCommentDOM(comment, scopeLabel2, onDelete);
+    function renderCommentDOM2(comment, options2) {
+      return renderCommentDOM(comment, scopeLabel2, options2);
     }
     function syncCommentBodiesFromDOM() {
       const textareas = document.querySelectorAll("textarea[data-comment-id]");
@@ -643,11 +702,14 @@
       }
       fileCommentsContainer.className = "border-b border-review-border bg-[#0d1117] px-4 py-4 space-y-4";
       fileComments.forEach((comment) => {
-        const dom = renderCommentDOM2(comment, () => {
-          state.comments = state.comments.filter((item) => item.id !== comment.id);
-          options.onCommentsChange();
+        const dom = renderCommentDOM2(comment, {
+          onDelete: () => {
+            state.comments = state.comments.filter((item) => item.id !== comment.id);
+            options.onCommentsChange();
+          },
+          onUpdate: options.onCommentsChange
         });
-        dom.className = "rounded-lg border border-review-border bg-review-panel p-4";
+        dom.className = "";
         fileCommentsContainer.appendChild(dom);
       });
     }
@@ -712,6 +774,17 @@
   // src/web/features/editor/review-editor.ts
   function scrollKey(scope, fileId) {
     return `${scope}:${fileId}`;
+  }
+  function getCommentViewZoneHeight(comment) {
+    if (comment.status === "draft") {
+      return 236;
+    }
+    if (comment.collapsed) {
+      return 50;
+    }
+    const lineCount = Math.max(1, comment.body.split(`
+`).length);
+    return Math.max(104, lineCount * 22 + 62);
   }
   function createReviewEditor(options) {
     const {
@@ -838,18 +911,19 @@
       const inlineComments = state.comments.filter((comment) => comment.fileId === file.id && comment.scope === state.currentScope && comment.side !== "file");
       inlineComments.forEach((item) => {
         const editor = item.side === "original" ? originalEditor : modifiedEditor;
-        const domNode = renderCommentDOM2(item, () => {
-          state.comments = state.comments.filter((comment) => comment.id !== item.id);
-          onCommentsChange();
+        const domNode = renderCommentDOM2(item, {
+          onDelete: () => {
+            state.comments = state.comments.filter((comment) => comment.id !== item.id);
+            onCommentsChange();
+          },
+          onUpdate: onCommentsChange
         });
         if (!domNode)
           return;
         editor.changeViewZones((accessor) => {
-          const lineCount = typeof item.body === "string" && item.body.length > 0 ? item.body.split(`
-`).length : 1;
           const id = accessor.addZone({
             afterLineNumber: item.startLine,
-            heightInPx: Math.max(150, lineCount * 22 + 86),
+            heightInPx: getCommentViewZoneHeight(item),
             domNode
           });
           activeViewZones.push({ id, editor });
@@ -2389,7 +2463,9 @@ Target: \`${describeNavigationTarget(target)}\`
       side,
       startLine: line,
       endLine: line,
-      body: ""
+      body: "",
+      status: "draft",
+      collapsed: false
     });
   }
   editorController = createReviewEditor({
@@ -2401,7 +2477,7 @@ Target: \`${describeNavigationTarget(target)}\`
     getScopeDisplayPath,
     getRequestState,
     ensureFileLoaded,
-    renderCommentDOM: (comment, onDelete) => commentManager?.renderCommentDOM(comment, onDelete) ?? document.createElement("div"),
+    renderCommentDOM: (comment, options) => commentManager?.renderCommentDOM(comment, options) ?? document.createElement("div"),
     addInlineComment,
     onCommentsChange: () => {
       updateCommentsUI();
@@ -2449,7 +2525,9 @@ Target: \`${describeNavigationTarget(target)}\`
           side: "file",
           startLine: null,
           endLine: null,
-          body: value
+          body: value,
+          status: "submitted",
+          collapsed: false
         });
         submitButton.disabled = false;
         updateCommentsUI();
@@ -2527,7 +2605,7 @@ Target: \`${describeNavigationTarget(target)}\`
     const payload = {
       type: "submit",
       overallComment: state.overallComment.trim(),
-      comments: state.comments.map((comment) => ({ ...comment, body: comment.body.trim() })).filter((comment) => comment.body.length > 0)
+      comments: state.comments.map((comment) => ({ ...comment, body: comment.body.trim() })).filter((comment) => comment.status === "submitted" && comment.body.length > 0)
     };
     window.glimpse.send(payload);
     window.glimpse.close();

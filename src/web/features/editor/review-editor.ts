@@ -52,7 +52,10 @@ interface ReviewEditorOptions {
   ensureFileLoaded: (fileId: string, scope: ReviewScope) => void;
   renderCommentDOM: (
     comment: DiffReviewComment,
-    onDelete: () => void,
+    options: {
+      onDelete: () => void;
+      onUpdate: () => void;
+    },
   ) => HTMLElement;
   addInlineComment: (fileId: string, side: CommentSide, line: number) => void;
   onCommentsChange: () => void;
@@ -98,6 +101,19 @@ interface ReviewEditorRequestResult {
 
 function scrollKey(scope: ReviewScope, fileId: string): string {
   return `${scope}:${fileId}`;
+}
+
+function getCommentViewZoneHeight(comment: DiffReviewComment): number {
+  if (comment.status === "draft") {
+    return 236;
+  }
+
+  if (comment.collapsed) {
+    return 50;
+  }
+
+  const lineCount = Math.max(1, comment.body.split("\n").length);
+  return Math.max(104, lineCount * 22 + 62);
 }
 
 export function createReviewEditor(
@@ -231,22 +247,21 @@ export function createReviewEditor(
 
     inlineComments.forEach((item) => {
       const editor = item.side === "original" ? originalEditor : modifiedEditor;
-      const domNode = renderCommentDOM(item, () => {
-        state.comments = state.comments.filter(
-          (comment) => comment.id !== item.id,
-        );
-        onCommentsChange();
+      const domNode = renderCommentDOM(item, {
+        onDelete: () => {
+          state.comments = state.comments.filter(
+            (comment) => comment.id !== item.id,
+          );
+          onCommentsChange();
+        },
+        onUpdate: onCommentsChange,
       });
       if (!domNode) return;
 
       editor.changeViewZones((accessor) => {
-        const lineCount =
-          typeof item.body === "string" && item.body.length > 0
-            ? item.body.split("\n").length
-            : 1;
         const id = accessor.addZone({
           afterLineNumber: item.startLine,
-          heightInPx: Math.max(150, lineCount * 22 + 86),
+          heightInPx: getCommentViewZoneHeight(item),
           domNode,
         });
         activeViewZones.push({ id, editor });

@@ -17,7 +17,10 @@ interface ReviewCommentsOptions {
 export interface ReviewCommentManager {
   renderCommentDOM: (
     comment: DiffReviewComment,
-    onDelete: () => void,
+    options: {
+      onDelete: () => void;
+      onUpdate: () => void;
+    },
   ) => HTMLElement;
   renderFileComments: () => void;
   syncCommentBodiesFromDOM: () => void;
@@ -30,9 +33,12 @@ export function createCommentManager(
 
   function renderCommentDOM(
     comment: DiffReviewComment,
-    onDelete: () => void,
+    options: {
+      onDelete: () => void;
+      onUpdate: () => void;
+    },
   ): HTMLElement {
-    return renderCommentNode(comment, scopeLabel, onDelete);
+    return renderCommentNode(comment, scopeLabel, options);
   }
 
   function syncCommentBodiesFromDOM(): void {
@@ -71,14 +77,16 @@ export function createCommentManager(
     fileCommentsContainer.className =
       "border-b border-review-border bg-[#0d1117] px-4 py-4 space-y-4";
     fileComments.forEach((comment) => {
-      const dom = renderCommentDOM(comment, () => {
-        state.comments = state.comments.filter(
-          (item) => item.id !== comment.id,
-        );
-        options.onCommentsChange();
+      const dom = renderCommentDOM(comment, {
+        onDelete: () => {
+          state.comments = state.comments.filter(
+            (item) => item.id !== comment.id,
+          );
+          options.onCommentsChange();
+        },
+        onUpdate: options.onCommentsChange,
       });
-      dom.className =
-        "rounded-lg border border-review-border bg-review-panel p-4";
+      dom.className = "";
       fileCommentsContainer.appendChild(dom);
     });
   }

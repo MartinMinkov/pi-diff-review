@@ -91,6 +91,15 @@ export function createSidebarController(
     activeFileShowsDiff,
   } = options;
 
+  function getSubmittedCommentCount(fileId?: string): number {
+    return state.comments.filter((comment) => {
+      if (comment.status !== "submitted") return false;
+      if (comment.scope !== state.currentScope) return false;
+      if (fileId != null && comment.fileId !== fileId) return false;
+      return true;
+    }).length;
+  }
+
   function renderTreeNode(node: TreeNode, depth: number) {
     const children = [...node.children.values()].sort((a, b) => {
       if (a.kind !== b.kind) return a.kind === "dir" ? -1 : 1;
@@ -125,10 +134,7 @@ export function createSidebarController(
       const file = child.file;
       if (!file) continue;
 
-      const count = state.comments.filter(
-        (comment) =>
-          comment.fileId === file.id && comment.scope === state.currentScope,
-      ).length;
+      const count = getSubmittedCommentCount(file.id);
       const reviewed = isFileReviewed(file.id);
       const requestState = getRequestState(file.id, state.currentScope);
       const loading =
@@ -168,10 +174,7 @@ export function createSidebarController(
       const parentPath = path.includes("/")
         ? path.slice(0, path.lastIndexOf("/"))
         : "";
-      const count = state.comments.filter(
-        (comment) =>
-          comment.fileId === file.id && comment.scope === state.currentScope,
-      ).length;
+      const count = getSubmittedCommentCount(file.id);
       const reviewed = isFileReviewed(file.id);
       const requestState = getRequestState(file.id, state.currentScope);
       const loading =
@@ -298,7 +301,7 @@ export function createSidebarController(
     }
 
     sidebarTitleEl.textContent = scopeLabel(state.currentScope);
-    const comments = state.comments.length;
+    const comments = getSubmittedCommentCount();
     const filteredSuffix = state.fileFilter.trim()
       ? ` • ${visibleFiles.length} shown`
       : "";

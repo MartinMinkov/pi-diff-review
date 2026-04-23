@@ -1,6 +1,11 @@
 import { escapeHtml } from "../../shared/lib/utils.js";
 import type { DiffReviewComment } from "../../shared/contracts/review.js";
 
+interface CommentRenderOptions {
+  onDelete: () => void;
+  onUpdate: () => void;
+}
+
 export interface TextModalOptions {
   title: string;
   description: string;
@@ -263,7 +268,7 @@ export function showPeekModal(options: PeekModalOptions): void {
 export function renderCommentDOM(
   comment: DiffReviewComment,
   scopeLabel: (scope: DiffReviewComment["scope"]) => string,
-  onDelete: () => void,
+  options: CommentRenderOptions,
 ): HTMLElement {
   const container = document.createElement("div");
   container.className = "view-zone-container";
@@ -273,39 +278,109 @@ export function renderCommentDOM(
       ? `File comment • ${scopeLabel(comment.scope)}`
       : `${comment.side === "original" ? "Original" : "Modified"} line ${comment.startLine} • ${scopeLabel(comment.scope)}`;
 
+  if (comment.status === "draft") {
+    container.innerHTML = `
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <div class="text-xs font-semibold text-review-text">${escapeHtml(title)}</div>
+        <div class="flex items-center gap-2">
+          <button data-action="cancel" class="cursor-pointer rounded-md border border-review-border bg-review-panel px-3 py-1.5 text-xs font-medium text-review-text hover:bg-[#21262d]">Cancel</button>
+          <button data-action="submit" class="cursor-pointer rounded-md border border-[rgba(240,246,252,0.1)] bg-[#238636] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#2ea043] disabled:cursor-not-allowed disabled:opacity-50">Submit</button>
+        </div>
+      </div>
+      <textarea data-comment-id="${escapeHtml(comment.id)}" rows="6" class="scrollbar-thin min-h-[140px] w-full resize-y overflow-auto rounded-md border border-review-border bg-[#010409] px-3 py-2 text-sm text-review-text outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Leave a comment"></textarea>
+    `;
+
+    const textarea = container.querySelector(
+      "textarea",
+    ) as HTMLTextAreaElement | null;
+    const cancelButton = container.querySelector(
+      "[data-action='cancel']",
+    ) as HTMLButtonElement | null;
+    const submitButton = container.querySelector(
+      "[data-action='submit']",
+    ) as HTMLButtonElement | null;
+
+    if (!textarea) {
+      return container;
+    }
+
+    textarea.value = comment.body || "";
+    setupPasteHandler(textarea);
+
+    const syncSubmitState = () => {
+      if (!submitButton) return;
+      submitButton.disabled = textarea.value.trim().length === 0;
+    };
+
+    textarea.addEventListener("input", () => {
+      comment.body = textarea.value;
+      syncSubmitState();
+    });
+
+    cancelButton?.addEventListener("click", options.onDelete);
+    submitButton?.addEventListener("click", () => {
+      const body = textarea.value.trim();
+      if (!body) return;
+      comment.body = body;
+      comment.status = "submitted";
+      comment.collapsed = true;
+      options.onUpdate();
+    });
+
+    syncSubmitState();
+
+    if (!comment.body) {
+      setTimeout(() => textarea.focus(), 50);
+    }
+
+    return container;
+  }
+
+  const preview = comment.body.trim().split("\n")[0] || "Comment";
+  const toggleLabel = comment.collapsed ? "Expand comment" : "Collapse comment";
+
   container.innerHTML = `
-    <div class="mb-2 flex items-center justify-between gap-3">
-      <div class="text-xs font-semibold text-review-text">${escapeHtml(title)}</div>
-      <button data-action="delete" class="cursor-pointer rounded-md border border-transparent bg-transparent px-2 py-1 text-xs font-medium text-review-muted hover:bg-red-500/10 hover:text-red-400">Delete</button>
+    <div class="rounded-md border border-review-border bg-review-panel">
+      <div class="flex items-center gap-2 px-3 py-2">
+        <button data-action="toggle" aria-label="${escapeHtml(toggleLabel)}" class="flex min-w-0 flex-1 items-center gap-2 text-left">
+          <svg class="h-3.5 w-3.5 shrink-0 text-review-muted transition-transform ${comment.collapsed ? "-rotate-90" : ""}" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+            <path d="M12.78 6.22a.749.749 0 0 1 0 1.06l-4.25 4.25a.749.749 0 0 1-1.06 0L3.22 7.28a.749.749 0 0 1 1.06-1.06L8 9.939l3.72-3.719a.749.749 0 0 1 1.06 0Z"></path>
+          </svg>
+          <span class="min-w-0 flex-1">
+            <span class="block truncate text-xs font-semibold text-review-text">${escapeHtml(title)}</span>
+            ${
+              comment.collapsed
+                ? `<span class="mt-0.5 block truncate text-xs text-review-muted">${escapeHtml(preview)}</span>`
+                : ""
+            }
+          </span>
+        </button>
+        ${
+          comment.collapsed
+            ? ""
+            : `<button data-action="delete" class="cursor-pointer rounded-md border border-transparent bg-transparent px-2 py-1 text-xs font-medium text-review-muted hover:bg-red-500/10 hover:text-red-400">Delete</button>`
+        }
+      </div>
+      ${
+        comment.collapsed
+          ? ""
+          : `<div class="border-t border-review-border px-3 py-3 whitespace-pre-wrap break-words text-sm text-review-text">${escapeHtml(comment.body)}</div>`
+      }
     </div>
-    <textarea data-comment-id="${escapeHtml(comment.id)}" rows="6" class="scrollbar-thin min-h-[140px] w-full resize-y overflow-auto rounded-md border border-review-border bg-[#010409] px-3 py-2 text-sm text-review-text outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="Leave a comment"></textarea>
   `;
 
-  const textarea = container.querySelector(
-    "textarea",
-  ) as HTMLTextAreaElement | null;
+  const toggleButton = container.querySelector(
+    "[data-action='toggle']",
+  ) as HTMLButtonElement | null;
   const deleteButton = container.querySelector(
     "[data-action='delete']",
   ) as HTMLButtonElement | null;
 
-  if (!textarea) {
-    return container;
-  }
-
-  textarea.value = comment.body || "";
-  setupPasteHandler(textarea);
-
-  textarea.addEventListener("input", () => {
-    comment.body = textarea.value;
+  toggleButton?.addEventListener("click", () => {
+    comment.collapsed = !comment.collapsed;
+    options.onUpdate();
   });
-
-  if (deleteButton) {
-    deleteButton.addEventListener("click", onDelete);
-  }
-
-  if (!comment.body) {
-    setTimeout(() => textarea.focus(), 50);
-  }
+  deleteButton?.addEventListener("click", options.onDelete);
 
   return container;
 }
