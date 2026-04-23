@@ -419,9 +419,28 @@
             </div>
             <div class="min-h-0 flex-1 review-panel-section">
               <div class="review-panel-heading">
-                <div class="review-panel-title">Outline</div>
+                <div class="review-panel-title">Changed in file</div>
+                <div class="text-[10px] text-review-muted">Primary</div>
               </div>
-              <div id="outline-container" class="space-y-1"></div>
+              <div class="mb-3 text-[11px] leading-5 text-review-muted">
+                Focus on the functions, types, and members whose bodies changed in the active file.
+              </div>
+              <div id="changed-symbols-container" class="space-y-1"></div>
+            </div>
+            <div class="review-panel-section">
+              <div class="review-panel-heading">
+                <div class="review-panel-title">File outline</div>
+                <button
+                  id="toggle-outline-button"
+                  class="cursor-pointer rounded-md border border-review-border bg-review-panel-2 px-2.5 py-1 text-[11px] font-medium text-review-text hover:bg-[#1a212b]"
+                >
+                  Show
+                </button>
+              </div>
+              <div class="mb-3 text-[11px] leading-5 text-review-muted">
+                Use this when you want full file structure, even outside the changed areas.
+              </div>
+              <div id="outline-container" class="hidden space-y-1"></div>
             </div>
           </aside>
         </main>

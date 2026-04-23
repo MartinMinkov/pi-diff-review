@@ -116,7 +116,9 @@ const {
   modeHintEl,
   fileCommentsContainer,
   editorContainerEl,
+  changedSymbolsContainerEl,
   outlineContainerEl,
+  toggleOutlineButton,
   reviewQueueContainerEl,
   changedSymbolsButton,
   agentActionButton,
@@ -1102,7 +1104,9 @@ function handleAgentAction() {
 inspectorController = createReviewInspectorController({
   reviewDataFiles: reviewData.files,
   state,
+  changedSymbolsContainerEl,
   outlineContainerEl,
+  toggleOutlineButtonEl: toggleOutlineButton,
   reviewQueueContainerEl,
   activeFile,
   getCurrentNavigationTarget,
@@ -1116,6 +1120,10 @@ inspectorController = createReviewInspectorController({
   getCommentKindLabel,
   isCommentResolved,
   isCommentAnchorStale,
+});
+
+toggleOutlineButton.addEventListener("click", () => {
+  void inspectorController?.toggleFullOutlineVisibility();
 });
 
 commandPaletteController = createReviewCommandPaletteController({

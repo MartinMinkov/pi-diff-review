@@ -8,14 +8,17 @@ import type {
 } from "../../shared/contracts/review.js";
 import type { ReviewState } from "../../shared/state/review-state.js";
 import {
-  extractReviewSymbols,
-  type ReviewSymbolItem,
+  extractChangedReviewSymbols,
+  extractReviewSymbolRanges,
+  type ReviewSymbolRangeItem,
 } from "../../features/symbols/symbol-context.js";
 
 interface ReviewInspectorOptions {
   reviewDataFiles: ReviewFile[];
   state: ReviewState;
+  changedSymbolsContainerEl: HTMLDivElement;
   outlineContainerEl: HTMLDivElement;
+  toggleOutlineButtonEl: HTMLButtonElement;
   reviewQueueContainerEl: HTMLDivElement;
   activeFile: () => ReviewFile | null;
   getCurrentNavigationTarget: () => ReviewNavigationTarget | null;
@@ -40,6 +43,7 @@ interface ReviewInspectorOptions {
 export interface ReviewInspectorController {
   renderReviewQueue: () => void;
   renderOutline: () => Promise<void>;
+  toggleFullOutlineVisibility: () => Promise<void>;
   jumpToComment: (comment: DiffReviewComment) => void;
   getSortedUnresolvedComments: () => DiffReviewComment[];
   navigateUnresolvedComment: (direction: "next" | "previous") => boolean;
@@ -51,7 +55,9 @@ export function createReviewInspectorController(
   const {
     reviewDataFiles,
     state,
+    changedSymbolsContainerEl,
     outlineContainerEl,
+    toggleOutlineButtonEl,
     reviewQueueContainerEl,
     activeFile,
     getCurrentNavigationTarget,
@@ -69,8 +75,9 @@ export function createReviewInspectorController(
 
   const outlineCache = new Map<
     string,
-    { content: string; symbols: ReviewSymbolItem[] }
+    { content: string; symbols: ReviewSymbolRangeItem[] }
   >();
+  let showFullOutline = false;
 
   function getActiveCommentQueue(): DiffReviewComment[] {
     return state.comments
@@ -169,7 +176,12 @@ export function createReviewInspectorController(
   async function renderOutline(): Promise<void> {
     const file = activeFile();
     const scope = state.currentScope;
+    outlineContainerEl.classList.toggle("hidden", !showFullOutline);
+    toggleOutlineButtonEl.textContent = showFullOutline ? "Hide" : "Show";
+
     if (!file) {
+      changedSymbolsContainerEl.innerHTML =
+        '<div class="rounded-md border border-review-border bg-[#010409] px-3 py-3 text-sm text-review-muted">Select a file to inspect the changed symbols in it.</div>';
       outlineContainerEl.innerHTML =
         '<div class="rounded-md border border-review-border bg-[#010409] px-3 py-3 text-sm text-review-muted">Select a file to inspect its symbols.</div>';
       return;
@@ -189,11 +201,37 @@ export function createReviewInspectorController(
     const symbols =
       cached && cached.content === content
         ? cached.symbols
-        : extractReviewSymbols(content, inferLanguage(getScopeFilePath(file)));
+        : extractReviewSymbolRanges(content, inferLanguage(getScopeFilePath(file)));
     if (!cached || cached.content !== content) {
       outlineCache.set(outlineKey, { content, symbols });
     }
     const current = getCurrentNavigationTarget();
+    const preferredSide =
+      scope === "all-files" || getScopeComparison(file, scope)?.hasModified
+        ? "modified"
+        : "original";
+    const changedSymbols = extractChangedReviewSymbols({
+      originalContent: contents?.originalContent ?? "",
+      modifiedContent: contents?.modifiedContent ?? "",
+      languageId: inferLanguage(getScopeFilePath(file)),
+      preferModified: preferredSide === "modified",
+    });
+
+    renderSymbolList({
+      container: changedSymbolsContainerEl,
+      file,
+      scope,
+      current,
+      symbols: changedSymbols,
+      emptyLabel:
+        "No changed symbols were detected for this file. Open the full outline if you want the complete file structure.",
+      activeSide: preferredSide,
+      openNavigationTarget,
+    });
+
+    if (!showFullOutline) {
+      return;
+    }
 
     if (symbols.length === 0) {
       outlineContainerEl.innerHTML =
@@ -201,40 +239,21 @@ export function createReviewInspectorController(
       return;
     }
 
-    outlineContainerEl.innerHTML = "";
-    symbols.forEach((symbol) => {
-      const button = document.createElement("button");
-      const active =
-        current?.fileId === file.id &&
-        current.scope === scope &&
-        current.line === symbol.lineNumber;
-      button.type = "button";
-      button.className = active
-        ? "flex w-full items-center justify-between gap-3 rounded-md border border-[#2ea043]/35 bg-[#238636]/12 px-3 py-2 text-left"
-        : "flex w-full items-center justify-between gap-3 rounded-md border border-transparent px-3 py-2 text-left hover:bg-[#161b22]";
-      button.innerHTML = `
-        <span class="min-w-0">
-          <span class="block truncate text-sm font-medium text-review-text">${symbol.title}</span>
-          <span class="mt-0.5 block text-[11px] text-review-muted">${symbol.kind} · line ${symbol.lineNumber}</span>
-        </span>
-        <span class="text-[11px] text-review-muted">${symbol.lineNumber}</span>
-      `;
-      button.addEventListener("click", () => {
-        openNavigationTarget({
-          fileId: file.id,
-          scope,
-          side:
-            scope === "all-files"
-              ? "modified"
-              : getScopeComparison(file, scope)?.hasModified
-                ? "modified"
-                : "original",
-          line: symbol.lineNumber,
-          column: 1,
-        });
-      });
-      outlineContainerEl.appendChild(button);
+    renderSymbolList({
+      container: outlineContainerEl,
+      file,
+      scope,
+      current,
+      symbols,
+      emptyLabel: "No outline entries were detected for this file.",
+      activeSide: preferredSide,
+      openNavigationTarget,
     });
+  }
+
+  async function toggleFullOutlineVisibility(): Promise<void> {
+    showFullOutline = !showFullOutline;
+    await renderOutline();
   }
 
   function getSortedUnresolvedComments(): DiffReviewComment[] {
@@ -318,8 +337,67 @@ export function createReviewInspectorController(
   return {
     renderReviewQueue,
     renderOutline,
+    toggleFullOutlineVisibility,
     jumpToComment,
     getSortedUnresolvedComments,
     navigateUnresolvedComment,
   };
+}
+
+function renderSymbolList(options: {
+  container: HTMLDivElement;
+  file: ReviewFile;
+  scope: ReviewScope;
+  current: ReviewNavigationTarget | null;
+  symbols: ReviewSymbolRangeItem[];
+  emptyLabel: string;
+  activeSide: "original" | "modified";
+  openNavigationTarget: (target: ReviewNavigationTarget) => void;
+}): void {
+  const {
+    container,
+    file,
+    scope,
+    current,
+    symbols,
+    emptyLabel,
+    activeSide,
+    openNavigationTarget,
+  } = options;
+
+  if (symbols.length === 0) {
+    container.innerHTML = `<div class="rounded-md border border-review-border bg-[#010409] px-3 py-3 text-sm text-review-muted">${emptyLabel}</div>`;
+    return;
+  }
+
+  container.innerHTML = "";
+  symbols.forEach((symbol) => {
+    const active =
+      current?.fileId === file.id &&
+      current.scope === scope &&
+      current.line >= symbol.lineNumber &&
+      current.line <= (symbol.endLineNumber ?? symbol.lineNumber);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = active
+      ? "flex w-full items-center justify-between gap-3 rounded-md border border-[#2ea043]/35 bg-[#238636]/12 px-3 py-2 text-left"
+      : "flex w-full items-center justify-between gap-3 rounded-md border border-transparent px-3 py-2 text-left hover:bg-[#161b22]";
+    button.innerHTML = `
+      <span class="min-w-0">
+        <span class="block truncate text-sm font-medium text-review-text">${symbol.title}</span>
+        <span class="mt-0.5 block text-[11px] text-review-muted">${symbol.kind} · line ${symbol.lineNumber}</span>
+      </span>
+      <span class="text-[11px] text-review-muted">${symbol.lineNumber}</span>
+    `;
+    button.addEventListener("click", () => {
+      openNavigationTarget({
+        fileId: file.id,
+        scope,
+        side: activeSide,
+        line: symbol.lineNumber,
+        column: 1,
+      });
+    });
+    container.appendChild(button);
+  });
 }

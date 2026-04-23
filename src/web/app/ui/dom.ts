@@ -20,7 +20,9 @@ export interface ReviewDomElements {
   fileCommentsContainer: HTMLDivElement;
   editorContainerEl: HTMLDivElement;
   inspectorEl: HTMLDivElement;
+  changedSymbolsContainerEl: HTMLDivElement;
   outlineContainerEl: HTMLDivElement;
+  toggleOutlineButton: HTMLButtonElement;
   reviewQueueContainerEl: HTMLDivElement;
   changedSymbolsButton: HTMLButtonElement;
   agentActionButton: HTMLButtonElement;
@@ -86,9 +88,15 @@ export function getReviewDomElements(): ReviewDomElements {
       "editor-container",
     ) as HTMLDivElement,
     inspectorEl: document.getElementById("inspector") as HTMLDivElement,
+    changedSymbolsContainerEl: document.getElementById(
+      "changed-symbols-container",
+    ) as HTMLDivElement,
     outlineContainerEl: document.getElementById(
       "outline-container",
     ) as HTMLDivElement,
+    toggleOutlineButton: document.getElementById(
+      "toggle-outline-button",
+    ) as HTMLButtonElement,
     reviewQueueContainerEl: document.getElementById(
       "review-queue-container",
     ) as HTMLDivElement,

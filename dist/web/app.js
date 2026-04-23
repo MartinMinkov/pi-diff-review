@@ -1197,6 +1197,46 @@ ${snippet}`;
     });
     return items;
   }
+  function extractReviewSymbolRanges(content, languageId) {
+    const items = extractReviewSymbols(content, languageId);
+    const totalLines = content.length === 0 ? 0 : content.split(/\r?\n/).length;
+    return items.map((item, index) => ({
+      ...item,
+      endLineNumber: index < items.length - 1 ? Math.max(item.lineNumber, (items[index + 1]?.lineNumber ?? item.lineNumber) - 1) : Math.max(item.lineNumber, totalLines)
+    }));
+  }
+  function extractChangedReviewSymbols(options) {
+    const originalSymbols = extractReviewSymbolRanges(options.originalContent, options.languageId);
+    const modifiedSymbols = extractReviewSymbolRanges(options.modifiedContent, options.languageId);
+    const primarySymbols = options.preferModified ? modifiedSymbols : originalSymbols;
+    const comparisonSymbols = options.preferModified ? originalSymbols : modifiedSymbols;
+    const primaryContent = options.preferModified ? options.modifiedContent : options.originalContent;
+    const comparisonContent = options.preferModified ? options.originalContent : options.modifiedContent;
+    if (primarySymbols.length === 0) {
+      return [];
+    }
+    const comparisonBySignature = new Map;
+    for (const symbol of comparisonSymbols) {
+      const key = getSymbolSignature(symbol);
+      const bucket = comparisonBySignature.get(key);
+      if (bucket) {
+        bucket.push(symbol);
+      } else {
+        comparisonBySignature.set(key, [symbol]);
+      }
+    }
+    const seenBySignature = new Map;
+    return primarySymbols.filter((symbol) => {
+      const signature = getSymbolSignature(symbol);
+      const occurrenceIndex = seenBySignature.get(signature) ?? 0;
+      seenBySignature.set(signature, occurrenceIndex + 1);
+      const match = comparisonBySignature.get(signature)?.[occurrenceIndex] ?? null;
+      if (!match) {
+        return true;
+      }
+      return getSymbolRangeContent(primaryContent, symbol) !== getSymbolRangeContent(comparisonContent, match);
+    });
+  }
   function matchSymbolLine(line, languageId) {
     const trimmed = line.trim();
     if (!trimmed)
@@ -1224,13 +1264,22 @@ ${snippet}`;
       kind
     } : null;
   }
+  function getSymbolSignature(symbol) {
+    return `${symbol.kind}:${symbol.title}`;
+  }
+  function getSymbolRangeContent(content, symbol) {
+    return content.split(/\r?\n/).slice(Math.max(0, symbol.lineNumber - 1), Math.max(symbol.lineNumber, symbol.endLineNumber)).join(`
+`).trim();
+  }
 
   // src/web/app/inspector/review-inspector.ts
   function createReviewInspectorController(options) {
     const {
       reviewDataFiles,
       state,
+      changedSymbolsContainerEl,
       outlineContainerEl,
+      toggleOutlineButtonEl,
       reviewQueueContainerEl,
       activeFile,
       getCurrentNavigationTarget,
@@ -1246,6 +1295,7 @@ ${snippet}`;
       isCommentAnchorStale
     } = options;
     const outlineCache = new Map;
+    let showFullOutline = false;
     function getActiveCommentQueue() {
       return state.comments.filter((comment) => comment.status === "submitted" && !isCommentResolved2(comment) && comment.scope === state.currentScope).sort((left, right) => {
         if (left.fileId !== right.fileId) {
@@ -1306,7 +1356,10 @@ ${snippet}`;
     async function renderOutline() {
       const file = activeFile();
       const scope = state.currentScope;
+      outlineContainerEl.classList.toggle("hidden", !showFullOutline);
+      toggleOutlineButtonEl.textContent = showFullOutline ? "Hide" : "Show";
       if (!file) {
+        changedSymbolsContainerEl.innerHTML = '<div class="rounded-md border border-review-border bg-[#010409] px-3 py-3 text-sm text-review-muted">Select a file to inspect the changed symbols in it.</div>';
         outlineContainerEl.innerHTML = '<div class="rounded-md border border-review-border bg-[#010409] px-3 py-3 text-sm text-review-muted">Select a file to inspect its symbols.</div>';
         return;
       }
@@ -1318,39 +1371,49 @@ ${snippet}`;
       const content = useModified ? contents?.modifiedContent ?? "" : contents?.originalContent ?? "";
       const outlineKey = `${scope}:${file.id}:${useModified ? "modified" : "original"}`;
       const cached = outlineCache.get(outlineKey);
-      const symbols = cached && cached.content === content ? cached.symbols : extractReviewSymbols(content, inferLanguage(getScopeFilePath(file)));
+      const symbols = cached && cached.content === content ? cached.symbols : extractReviewSymbolRanges(content, inferLanguage(getScopeFilePath(file)));
       if (!cached || cached.content !== content) {
         outlineCache.set(outlineKey, { content, symbols });
       }
       const current = getCurrentNavigationTarget();
+      const preferredSide = scope === "all-files" || getScopeComparison(file, scope)?.hasModified ? "modified" : "original";
+      const changedSymbols = extractChangedReviewSymbols({
+        originalContent: contents?.originalContent ?? "",
+        modifiedContent: contents?.modifiedContent ?? "",
+        languageId: inferLanguage(getScopeFilePath(file)),
+        preferModified: preferredSide === "modified"
+      });
+      renderSymbolList({
+        container: changedSymbolsContainerEl,
+        file,
+        scope,
+        current,
+        symbols: changedSymbols,
+        emptyLabel: "No changed symbols were detected for this file. Open the full outline if you want the complete file structure.",
+        activeSide: preferredSide,
+        openNavigationTarget
+      });
+      if (!showFullOutline) {
+        return;
+      }
       if (symbols.length === 0) {
         outlineContainerEl.innerHTML = '<div class="rounded-md border border-review-border bg-[#010409] px-3 py-3 text-sm text-review-muted">No outline entries were detected for this file.</div>';
         return;
       }
-      outlineContainerEl.innerHTML = "";
-      symbols.forEach((symbol) => {
-        const button = document.createElement("button");
-        const active = current?.fileId === file.id && current.scope === scope && current.line === symbol.lineNumber;
-        button.type = "button";
-        button.className = active ? "flex w-full items-center justify-between gap-3 rounded-md border border-[#2ea043]/35 bg-[#238636]/12 px-3 py-2 text-left" : "flex w-full items-center justify-between gap-3 rounded-md border border-transparent px-3 py-2 text-left hover:bg-[#161b22]";
-        button.innerHTML = `
-        <span class="min-w-0">
-          <span class="block truncate text-sm font-medium text-review-text">${symbol.title}</span>
-          <span class="mt-0.5 block text-[11px] text-review-muted">${symbol.kind} · line ${symbol.lineNumber}</span>
-        </span>
-        <span class="text-[11px] text-review-muted">${symbol.lineNumber}</span>
-      `;
-        button.addEventListener("click", () => {
-          openNavigationTarget({
-            fileId: file.id,
-            scope,
-            side: scope === "all-files" ? "modified" : getScopeComparison(file, scope)?.hasModified ? "modified" : "original",
-            line: symbol.lineNumber,
-            column: 1
-          });
-        });
-        outlineContainerEl.appendChild(button);
+      renderSymbolList({
+        container: outlineContainerEl,
+        file,
+        scope,
+        current,
+        symbols,
+        emptyLabel: "No outline entries were detected for this file.",
+        activeSide: preferredSide,
+        openNavigationTarget
       });
+    }
+    async function toggleFullOutlineVisibility() {
+      showFullOutline = !showFullOutline;
+      await renderOutline();
     }
     function getSortedUnresolvedComments() {
       const fileOrder = new Map(reviewDataFiles.map((file, index) => [file.id, index]));
@@ -1412,10 +1475,51 @@ ${snippet}`;
     return {
       renderReviewQueue,
       renderOutline,
+      toggleFullOutlineVisibility,
       jumpToComment,
       getSortedUnresolvedComments,
       navigateUnresolvedComment
     };
+  }
+  function renderSymbolList(options) {
+    const {
+      container,
+      file,
+      scope,
+      current,
+      symbols,
+      emptyLabel,
+      activeSide,
+      openNavigationTarget
+    } = options;
+    if (symbols.length === 0) {
+      container.innerHTML = `<div class="rounded-md border border-review-border bg-[#010409] px-3 py-3 text-sm text-review-muted">${emptyLabel}</div>`;
+      return;
+    }
+    container.innerHTML = "";
+    symbols.forEach((symbol) => {
+      const active = current?.fileId === file.id && current.scope === scope && current.line >= symbol.lineNumber && current.line <= (symbol.endLineNumber ?? symbol.lineNumber);
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = active ? "flex w-full items-center justify-between gap-3 rounded-md border border-[#2ea043]/35 bg-[#238636]/12 px-3 py-2 text-left" : "flex w-full items-center justify-between gap-3 rounded-md border border-transparent px-3 py-2 text-left hover:bg-[#161b22]";
+      button.innerHTML = `
+      <span class="min-w-0">
+        <span class="block truncate text-sm font-medium text-review-text">${symbol.title}</span>
+        <span class="mt-0.5 block text-[11px] text-review-muted">${symbol.kind} · line ${symbol.lineNumber}</span>
+      </span>
+      <span class="text-[11px] text-review-muted">${symbol.lineNumber}</span>
+    `;
+      button.addEventListener("click", () => {
+        openNavigationTarget({
+          fileId: file.id,
+          scope,
+          side: activeSide,
+          line: symbol.lineNumber,
+          column: 1
+        });
+      });
+      container.appendChild(button);
+    });
   }
 
   // src/web/features/file-tree/sidebar.ts
@@ -1700,7 +1804,9 @@ ${snippet}`;
       fileCommentsContainer: document.getElementById("file-comments-container"),
       editorContainerEl: document.getElementById("editor-container"),
       inspectorEl: document.getElementById("inspector"),
+      changedSymbolsContainerEl: document.getElementById("changed-symbols-container"),
       outlineContainerEl: document.getElementById("outline-container"),
+      toggleOutlineButton: document.getElementById("toggle-outline-button"),
       reviewQueueContainerEl: document.getElementById("review-queue-container"),
       changedSymbolsButton: document.getElementById("changed-symbols-button"),
       agentActionButton: document.getElementById("agent-action-button"),
@@ -3159,7 +3265,9 @@ Target: \`${describeNavigationTarget(target)}\`
     modeHintEl,
     fileCommentsContainer,
     editorContainerEl,
+    changedSymbolsContainerEl,
     outlineContainerEl,
+    toggleOutlineButton,
     reviewQueueContainerEl,
     changedSymbolsButton,
     agentActionButton,
@@ -3871,7 +3979,9 @@ Target: \`${describeNavigationTarget(target)}\`
   inspectorController = createReviewInspectorController({
     reviewDataFiles: reviewData.files,
     state,
+    changedSymbolsContainerEl,
     outlineContainerEl,
+    toggleOutlineButtonEl: toggleOutlineButton,
     reviewQueueContainerEl,
     activeFile,
     getCurrentNavigationTarget,
@@ -3885,6 +3995,9 @@ Target: \`${describeNavigationTarget(target)}\`
     getCommentKindLabel,
     isCommentResolved,
     isCommentAnchorStale
+  });
+  toggleOutlineButton.addEventListener("click", () => {
+    inspectorController?.toggleFullOutlineVisibility();
   });
   commandPaletteController = createReviewCommandPaletteController({
     state,

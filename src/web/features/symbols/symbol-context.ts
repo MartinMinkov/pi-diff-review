@@ -9,6 +9,10 @@ export interface ReviewSymbolItem {
   kind: "function" | "type" | "module" | "member" | "value";
 }
 
+export interface ReviewSymbolRangeItem extends ReviewSymbolItem {
+  endLineNumber: number;
+}
+
 export function getReviewSymbolContext(
   content: string,
   lineNumber: number,
@@ -71,6 +75,80 @@ export function extractReviewSymbols(
   });
 
   return items;
+}
+
+export function extractReviewSymbolRanges(
+  content: string,
+  languageId: string,
+): ReviewSymbolRangeItem[] {
+  const items = extractReviewSymbols(content, languageId);
+  const totalLines = content.length === 0 ? 0 : content.split(/\r?\n/).length;
+
+  return items.map((item, index) => ({
+    ...item,
+    endLineNumber:
+      index < items.length - 1
+        ? Math.max(item.lineNumber, (items[index + 1]?.lineNumber ?? item.lineNumber) - 1)
+        : Math.max(item.lineNumber, totalLines),
+  }));
+}
+
+export function extractChangedReviewSymbols(options: {
+  originalContent: string;
+  modifiedContent: string;
+  languageId: string;
+  preferModified: boolean;
+}): ReviewSymbolRangeItem[] {
+  const originalSymbols = extractReviewSymbolRanges(
+    options.originalContent,
+    options.languageId,
+  );
+  const modifiedSymbols = extractReviewSymbolRanges(
+    options.modifiedContent,
+    options.languageId,
+  );
+
+  const primarySymbols = options.preferModified ? modifiedSymbols : originalSymbols;
+  const comparisonSymbols = options.preferModified ? originalSymbols : modifiedSymbols;
+  const primaryContent = options.preferModified
+    ? options.modifiedContent
+    : options.originalContent;
+  const comparisonContent = options.preferModified
+    ? options.originalContent
+    : options.modifiedContent;
+
+  if (primarySymbols.length === 0) {
+    return [];
+  }
+
+  const comparisonBySignature = new Map<string, ReviewSymbolRangeItem[]>();
+  for (const symbol of comparisonSymbols) {
+    const key = getSymbolSignature(symbol);
+    const bucket = comparisonBySignature.get(key);
+    if (bucket) {
+      bucket.push(symbol);
+    } else {
+      comparisonBySignature.set(key, [symbol]);
+    }
+  }
+
+  const seenBySignature = new Map<string, number>();
+
+  return primarySymbols.filter((symbol) => {
+    const signature = getSymbolSignature(symbol);
+    const occurrenceIndex = seenBySignature.get(signature) ?? 0;
+    seenBySignature.set(signature, occurrenceIndex + 1);
+
+    const match = comparisonBySignature.get(signature)?.[occurrenceIndex] ?? null;
+    if (!match) {
+      return true;
+    }
+
+    return (
+      getSymbolRangeContent(primaryContent, symbol) !==
+      getSymbolRangeContent(comparisonContent, match)
+    );
+  });
 }
 
 function matchSymbolLine(
@@ -169,4 +247,19 @@ function captureSymbol(
         kind,
       }
     : null;
+}
+
+function getSymbolSignature(symbol: ReviewSymbolItem): string {
+  return `${symbol.kind}:${symbol.title}`;
+}
+
+function getSymbolRangeContent(
+  content: string,
+  symbol: ReviewSymbolRangeItem,
+): string {
+  return content
+    .split(/\r?\n/)
+    .slice(Math.max(0, symbol.lineNumber - 1), Math.max(symbol.lineNumber, symbol.endLineNumber))
+    .join("\n")
+    .trim();
 }
