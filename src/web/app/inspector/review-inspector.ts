@@ -12,6 +12,7 @@ import {
   extractReviewSymbolRanges,
   type ReviewSymbolRangeItem,
 } from "../../features/symbols/symbol-context.js";
+import { showCommentEditModal } from "../../features/comments/modals.js";
 
 interface ReviewInspectorOptions {
   reviewDataFiles: ReviewFile[];
@@ -151,7 +152,10 @@ export function createReviewInspectorController(
             </div>
             <div class="mt-1 truncate text-[11px] text-review-muted">${getCommentLocationLabel(comment)}</div>
           </button>
-          <button data-action="resolve" class="cursor-pointer rounded-md border border-review-border bg-[#0d1117] px-2 py-1 text-[11px] font-medium text-review-text hover:bg-[#1a212b]">Resolve</button>
+          <div class="flex items-center gap-2">
+            <button data-action="edit" class="cursor-pointer rounded-md border border-review-border bg-[#0d1117] px-2 py-1 text-[11px] font-medium text-review-text hover:bg-[#1a212b]">Edit</button>
+            <button data-action="resolve" class="cursor-pointer rounded-md border border-review-border bg-[#0d1117] px-2 py-1 text-[11px] font-medium text-review-text hover:bg-[#1a212b]">Resolve</button>
+          </div>
         </div>
         <div class="mt-2 line-clamp-3 whitespace-pre-wrap break-words text-sm text-review-text">${comment.body
           .replace(/&/g, "&amp;")
@@ -162,6 +166,22 @@ export function createReviewInspectorController(
         item.querySelector("[data-action='open']") as HTMLButtonElement | null
       )?.addEventListener("click", () => {
         jumpToComment(comment);
+      });
+      (
+        item.querySelector("[data-action='edit']") as HTMLButtonElement | null
+      )?.addEventListener("click", () => {
+        showCommentEditModal({
+          title: "Edit submitted comment",
+          description:
+            "Update this review instruction before you finish the review.",
+          initialBody: comment.body,
+          initialKind: getCommentKind(comment),
+          onSave: ({ body, kind }) => {
+            comment.body = body;
+            comment.kind = kind;
+            onCommentsChange();
+          },
+        });
       });
       (
         item.querySelector("[data-action='resolve']") as HTMLButtonElement | null

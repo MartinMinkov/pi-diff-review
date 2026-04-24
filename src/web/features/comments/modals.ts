@@ -17,6 +17,18 @@ export interface TextModalOptions {
   onSave: (value: string) => void;
 }
 
+export interface CommentEditModalOptions {
+  title: string;
+  description: string;
+  initialBody: string;
+  initialKind: DiffReviewCommentKind;
+  saveLabel?: string;
+  onSave: (value: {
+    body: string;
+    kind: DiffReviewCommentKind;
+  }) => void;
+}
+
 export interface ReferenceModalItem {
   title: string;
   description: string;
@@ -169,6 +181,74 @@ export function showTextModal(options: TextModalOptions): void {
   if (textarea) {
     textarea.focus();
   }
+}
+
+export function showCommentEditModal(options: CommentEditModalOptions): void {
+  const backdrop = document.createElement("div");
+  backdrop.className = "review-modal-backdrop";
+  backdrop.innerHTML = `
+    <div class="review-modal-card">
+      <div class="mb-2 text-base font-semibold text-white">${escapeHtml(options.title)}</div>
+      <div class="mb-4 text-sm text-review-muted">${escapeHtml(options.description)}</div>
+      <div class="mb-3">
+        <select id="review-comment-kind" class="rounded-md border border-review-border bg-[#010409] px-2 py-1.5 text-xs font-medium text-review-text outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+          <option value="feedback">Feedback</option>
+          <option value="question">Question</option>
+          <option value="risk">Risk</option>
+          <option value="explain">Explain</option>
+          <option value="tests">Tests</option>
+        </select>
+      </div>
+      <textarea id="review-comment-body" rows="10" class="scrollbar-thin min-h-[220px] w-full resize-y overflow-auto rounded-md border border-review-border bg-[#010409] px-3 py-2 text-sm text-review-text outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">${escapeHtml(options.initialBody ?? "")}</textarea>
+      <div class="mt-4 flex justify-end gap-2">
+        <button id="review-comment-cancel" class="cursor-pointer rounded-md border border-review-border bg-review-panel px-4 py-2 text-sm font-medium text-review-text hover:bg-[#21262d]">Cancel</button>
+        <button id="review-comment-save" class="cursor-pointer rounded-md border border-[rgba(240,246,252,0.1)] bg-[#238636] px-4 py-2 text-sm font-medium text-white hover:bg-[#2ea043]">${escapeHtml(options.saveLabel ?? "Save changes")}</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(backdrop);
+
+  const textarea = backdrop.querySelector(
+    "#review-comment-body",
+  ) as HTMLTextAreaElement | null;
+  const kindSelect = backdrop.querySelector(
+    "#review-comment-kind",
+  ) as HTMLSelectElement | null;
+  const cancelButton = backdrop.querySelector(
+    "#review-comment-cancel",
+  ) as HTMLButtonElement | null;
+  const saveButton = backdrop.querySelector(
+    "#review-comment-save",
+  ) as HTMLButtonElement | null;
+  const close = () => backdrop.remove();
+
+  if (textarea) {
+    setupPasteHandler(textarea);
+  }
+
+  if (kindSelect) {
+    kindSelect.value = options.initialKind;
+  }
+
+  cancelButton?.addEventListener("click", close);
+  saveButton?.addEventListener("click", () => {
+    const body = textarea?.value.trim() ?? "";
+    if (!body) return;
+    options.onSave({
+      body,
+      kind: (kindSelect?.value as DiffReviewCommentKind | undefined) ?? "feedback",
+    });
+    close();
+  });
+
+  backdrop.addEventListener("click", (event) => {
+    if (event.target === backdrop) {
+      close();
+    }
+  });
+
+  textarea?.focus();
 }
 
 export function showReferenceModal(options: ReferenceModalOptions): void {
@@ -697,6 +777,7 @@ export function renderCommentDOM(
             }
           </span>
         </button>
+        <button data-action="edit" class="cursor-pointer rounded-md border border-transparent bg-transparent px-2 py-1 text-xs font-medium text-review-muted hover:bg-[#11161d] hover:text-review-text">Edit</button>
         <button data-action="resolve" class="cursor-pointer rounded-md border border-transparent bg-transparent px-2 py-1 text-xs font-medium text-review-muted hover:bg-[#11161d] hover:text-review-text">${resolved ? "Reopen" : "Resolve"}</button>
         ${
           comment.collapsed
@@ -718,6 +799,9 @@ export function renderCommentDOM(
   const deleteButton = container.querySelector(
     "[data-action='delete']",
   ) as HTMLButtonElement | null;
+  const editButton = container.querySelector(
+    "[data-action='edit']",
+  ) as HTMLButtonElement | null;
   const resolveButton = container.querySelector(
     "[data-action='resolve']",
   ) as HTMLButtonElement | null;
@@ -725,6 +809,20 @@ export function renderCommentDOM(
   toggleButton?.addEventListener("click", () => {
     comment.collapsed = !comment.collapsed;
     options.onUpdate();
+  });
+  editButton?.addEventListener("click", () => {
+    showCommentEditModal({
+      title: "Edit submitted comment",
+      description: "Update this review instruction before you finish the review.",
+      initialBody: comment.body,
+      initialKind: kind,
+      onSave: ({ body, kind: nextKind }) => {
+        comment.body = body;
+        comment.kind = nextKind;
+        comment.collapsed = false;
+        options.onUpdate();
+      },
+    });
   });
   resolveButton?.addEventListener("click", () => {
     comment.resolved = !(comment.resolved === true);

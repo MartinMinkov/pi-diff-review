@@ -522,6 +522,59 @@
       textarea.focus();
     }
   }
+  function showCommentEditModal(options) {
+    const backdrop = document.createElement("div");
+    backdrop.className = "review-modal-backdrop";
+    backdrop.innerHTML = `
+    <div class="review-modal-card">
+      <div class="mb-2 text-base font-semibold text-white">${escapeHtml(options.title)}</div>
+      <div class="mb-4 text-sm text-review-muted">${escapeHtml(options.description)}</div>
+      <div class="mb-3">
+        <select id="review-comment-kind" class="rounded-md border border-review-border bg-[#010409] px-2 py-1.5 text-xs font-medium text-review-text outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+          <option value="feedback">Feedback</option>
+          <option value="question">Question</option>
+          <option value="risk">Risk</option>
+          <option value="explain">Explain</option>
+          <option value="tests">Tests</option>
+        </select>
+      </div>
+      <textarea id="review-comment-body" rows="10" class="scrollbar-thin min-h-[220px] w-full resize-y overflow-auto rounded-md border border-review-border bg-[#010409] px-3 py-2 text-sm text-review-text outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">${escapeHtml(options.initialBody ?? "")}</textarea>
+      <div class="mt-4 flex justify-end gap-2">
+        <button id="review-comment-cancel" class="cursor-pointer rounded-md border border-review-border bg-review-panel px-4 py-2 text-sm font-medium text-review-text hover:bg-[#21262d]">Cancel</button>
+        <button id="review-comment-save" class="cursor-pointer rounded-md border border-[rgba(240,246,252,0.1)] bg-[#238636] px-4 py-2 text-sm font-medium text-white hover:bg-[#2ea043]">${escapeHtml(options.saveLabel ?? "Save changes")}</button>
+      </div>
+    </div>
+  `;
+    document.body.appendChild(backdrop);
+    const textarea = backdrop.querySelector("#review-comment-body");
+    const kindSelect = backdrop.querySelector("#review-comment-kind");
+    const cancelButton = backdrop.querySelector("#review-comment-cancel");
+    const saveButton = backdrop.querySelector("#review-comment-save");
+    const close = () => backdrop.remove();
+    if (textarea) {
+      setupPasteHandler(textarea);
+    }
+    if (kindSelect) {
+      kindSelect.value = options.initialKind;
+    }
+    cancelButton?.addEventListener("click", close);
+    saveButton?.addEventListener("click", () => {
+      const body = textarea?.value.trim() ?? "";
+      if (!body)
+        return;
+      options.onSave({
+        body,
+        kind: kindSelect?.value ?? "feedback"
+      });
+      close();
+    });
+    backdrop.addEventListener("click", (event) => {
+      if (event.target === backdrop) {
+        close();
+      }
+    });
+    textarea?.focus();
+  }
   function showReferenceModal(options) {
     const backdrop = document.createElement("div");
     backdrop.className = "review-modal-backdrop";
@@ -929,6 +982,7 @@
             ${comment.collapsed ? `<span class="mt-0.5 block truncate text-xs text-review-muted">${escapeHtml(preview)}</span>` : ""}
           </span>
         </button>
+        <button data-action="edit" class="cursor-pointer rounded-md border border-transparent bg-transparent px-2 py-1 text-xs font-medium text-review-muted hover:bg-[#11161d] hover:text-review-text">Edit</button>
         <button data-action="resolve" class="cursor-pointer rounded-md border border-transparent bg-transparent px-2 py-1 text-xs font-medium text-review-muted hover:bg-[#11161d] hover:text-review-text">${resolved ? "Reopen" : "Resolve"}</button>
         ${comment.collapsed ? "" : `<button data-action="delete" class="cursor-pointer rounded-md border border-transparent bg-transparent px-2 py-1 text-xs font-medium text-review-muted hover:bg-red-500/10 hover:text-red-400">Delete</button>`}
       </div>
@@ -937,10 +991,25 @@
   `;
     const toggleButton = container.querySelector("[data-action='toggle']");
     const deleteButton = container.querySelector("[data-action='delete']");
+    const editButton = container.querySelector("[data-action='edit']");
     const resolveButton = container.querySelector("[data-action='resolve']");
     toggleButton?.addEventListener("click", () => {
       comment.collapsed = !comment.collapsed;
       options.onUpdate();
+    });
+    editButton?.addEventListener("click", () => {
+      showCommentEditModal({
+        title: "Edit submitted comment",
+        description: "Update this review instruction before you finish the review.",
+        initialBody: comment.body,
+        initialKind: kind,
+        onSave: ({ body, kind: nextKind }) => {
+          comment.body = body;
+          comment.kind = nextKind;
+          comment.collapsed = false;
+          options.onUpdate();
+        }
+      });
     });
     resolveButton?.addEventListener("click", () => {
       comment.resolved = !(comment.resolved === true);
@@ -1339,12 +1408,28 @@ ${snippet}`;
             </div>
             <div class="mt-1 truncate text-[11px] text-review-muted">${getCommentLocationLabel(comment)}</div>
           </button>
-          <button data-action="resolve" class="cursor-pointer rounded-md border border-review-border bg-[#0d1117] px-2 py-1 text-[11px] font-medium text-review-text hover:bg-[#1a212b]">Resolve</button>
+          <div class="flex items-center gap-2">
+            <button data-action="edit" class="cursor-pointer rounded-md border border-review-border bg-[#0d1117] px-2 py-1 text-[11px] font-medium text-review-text hover:bg-[#1a212b]">Edit</button>
+            <button data-action="resolve" class="cursor-pointer rounded-md border border-review-border bg-[#0d1117] px-2 py-1 text-[11px] font-medium text-review-text hover:bg-[#1a212b]">Resolve</button>
+          </div>
         </div>
         <div class="mt-2 line-clamp-3 whitespace-pre-wrap break-words text-sm text-review-text">${comment.body.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>
       `;
         item.querySelector("[data-action='open']")?.addEventListener("click", () => {
           jumpToComment(comment);
+        });
+        item.querySelector("[data-action='edit']")?.addEventListener("click", () => {
+          showCommentEditModal({
+            title: "Edit submitted comment",
+            description: "Update this review instruction before you finish the review.",
+            initialBody: comment.body,
+            initialKind: getCommentKind2(comment),
+            onSave: ({ body, kind }) => {
+              comment.body = body;
+              comment.kind = kind;
+              onCommentsChange();
+            }
+          });
         });
         item.querySelector("[data-action='resolve']")?.addEventListener("click", () => {
           comment.resolved = true;
