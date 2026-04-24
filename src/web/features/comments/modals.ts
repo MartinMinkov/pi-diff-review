@@ -755,8 +755,6 @@ export function renderCommentDOM(
   const preview = comment.body.trim().split("\n")[0] || "Comment";
   const toggleLabel = comment.collapsed ? "Expand comment" : "Collapse comment";
   const kind = comment.kind ?? "feedback";
-  const resolved = comment.resolved === true;
-
   container.innerHTML = `
     <div class="rounded-md border border-review-border bg-review-panel">
       <div class="flex items-center gap-2 px-3 py-2">
@@ -768,7 +766,6 @@ export function renderCommentDOM(
             <span class="flex items-center gap-2">
               <span class="block truncate text-xs font-semibold text-review-text">${escapeHtml(title)}</span>
               <span class="shrink-0 rounded-md border border-review-border bg-[#0d1117] px-2 py-0.5 text-[10px] font-medium text-review-muted">${escapeHtml(getCommentKindLabel(kind))}</span>
-              ${resolved ? `<span class="shrink-0 rounded-md border border-[#2ea043]/35 bg-[#238636]/12 px-2 py-0.5 text-[10px] font-medium text-[#3fb950]">Resolved</span>` : ""}
             </span>
             ${
               comment.collapsed
@@ -778,7 +775,6 @@ export function renderCommentDOM(
           </span>
         </button>
         <button data-action="edit" class="cursor-pointer rounded-md border border-transparent bg-transparent px-2 py-1 text-xs font-medium text-review-muted hover:bg-[#11161d] hover:text-review-text">Edit</button>
-        <button data-action="resolve" class="cursor-pointer rounded-md border border-transparent bg-transparent px-2 py-1 text-xs font-medium text-review-muted hover:bg-[#11161d] hover:text-review-text">${resolved ? "Reopen" : "Resolve"}</button>
         ${
           comment.collapsed
             ? ""
@@ -802,10 +798,6 @@ export function renderCommentDOM(
   const editButton = container.querySelector(
     "[data-action='edit']",
   ) as HTMLButtonElement | null;
-  const resolveButton = container.querySelector(
-    "[data-action='resolve']",
-  ) as HTMLButtonElement | null;
-
   toggleButton?.addEventListener("click", () => {
     comment.collapsed = !comment.collapsed;
     options.onUpdate();
@@ -823,10 +815,6 @@ export function renderCommentDOM(
         options.onUpdate();
       },
     });
-  });
-  resolveButton?.addEventListener("click", () => {
-    comment.resolved = !(comment.resolved === true);
-    options.onUpdate();
   });
   deleteButton?.addEventListener("click", options.onDelete);
 

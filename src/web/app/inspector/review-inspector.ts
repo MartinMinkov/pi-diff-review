@@ -1,4 +1,4 @@
-import { inferLanguage } from "../../shared/lib/utils.js";
+import { escapeHtml, inferLanguage } from "../../shared/lib/utils.js";
 import type {
   DiffReviewComment,
   DiffReviewCommentKind,
@@ -37,7 +37,6 @@ interface ReviewInspectorOptions {
   onCommentsChange: () => void;
   getCommentKind: (comment: DiffReviewComment) => DiffReviewCommentKind;
   getCommentKindLabel: (kind: DiffReviewCommentKind) => string;
-  isCommentResolved: (comment: DiffReviewComment) => boolean;
   isCommentAnchorStale: (comment: DiffReviewComment) => boolean;
 }
 
@@ -46,8 +45,8 @@ export interface ReviewInspectorController {
   renderOutline: () => Promise<void>;
   toggleFullOutlineVisibility: () => Promise<void>;
   jumpToComment: (comment: DiffReviewComment) => void;
-  getSortedUnresolvedComments: () => DiffReviewComment[];
-  navigateUnresolvedComment: (direction: "next" | "previous") => boolean;
+  getSortedSubmittedComments: () => DiffReviewComment[];
+  navigateSubmittedComment: (direction: "next" | "previous") => boolean;
 }
 
 export function createReviewInspectorController(
@@ -70,7 +69,6 @@ export function createReviewInspectorController(
     onCommentsChange,
     getCommentKind,
     getCommentKindLabel,
-    isCommentResolved,
     isCommentAnchorStale,
   } = options;
 
@@ -85,7 +83,6 @@ export function createReviewInspectorController(
       .filter(
         (comment) =>
           comment.status === "submitted" &&
-          !isCommentResolved(comment) &&
           comment.scope === state.currentScope,
       )
       .sort((left, right) => {
@@ -143,24 +140,24 @@ export function createReviewInspectorController(
       const item = document.createElement("div");
       item.className =
         "rounded-md border border-review-border bg-review-panel-2 px-3 py-3";
+      const kindLabel = escapeHtml(getCommentKindLabel(getCommentKind(comment)));
+      const locationLabel = escapeHtml(getCommentLocationLabel(comment));
+      const body = escapeHtml(comment.body);
       item.innerHTML = `
         <div class="flex items-start justify-between gap-2">
           <button data-action="open" class="min-w-0 flex-1 text-left">
             <div class="flex items-center gap-2">
-              <div class="truncate text-xs font-semibold text-review-text">${getCommentKindLabel(getCommentKind(comment))}</div>
+              <div class="truncate text-xs font-semibold text-review-text">${kindLabel}</div>
               ${isCommentAnchorStale(comment) ? '<span class="shrink-0 rounded-md border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-300">Changed</span>' : ""}
             </div>
-            <div class="mt-1 truncate text-[11px] text-review-muted">${getCommentLocationLabel(comment)}</div>
+            <div class="mt-1 truncate text-[11px] text-review-muted">${locationLabel}</div>
           </button>
           <div class="flex items-center gap-2">
             <button data-action="edit" class="cursor-pointer rounded-md border border-review-border bg-[#0d1117] px-2 py-1 text-[11px] font-medium text-review-text hover:bg-[#1a212b]">Edit</button>
-            <button data-action="resolve" class="cursor-pointer rounded-md border border-review-border bg-[#0d1117] px-2 py-1 text-[11px] font-medium text-review-text hover:bg-[#1a212b]">Resolve</button>
+            <button data-action="delete" class="cursor-pointer rounded-md border border-review-border bg-[#0d1117] px-2 py-1 text-[11px] font-medium text-review-text hover:border-red-500/30 hover:bg-red-500/10 hover:text-red-400">Delete</button>
           </div>
         </div>
-        <div class="mt-2 line-clamp-3 whitespace-pre-wrap break-words text-sm text-review-text">${comment.body
-          .replace(/&/g, "&amp;")
-          .replace(/</g, "&lt;")
-          .replace(/>/g, "&gt;")}</div>
+        <div class="mt-2 line-clamp-3 whitespace-pre-wrap break-words text-sm text-review-text">${body}</div>
       `;
       (
         item.querySelector("[data-action='open']") as HTMLButtonElement | null
@@ -184,9 +181,9 @@ export function createReviewInspectorController(
         });
       });
       (
-        item.querySelector("[data-action='resolve']") as HTMLButtonElement | null
+        item.querySelector("[data-action='delete']") as HTMLButtonElement | null
       )?.addEventListener("click", () => {
-        comment.resolved = true;
+        state.comments = state.comments.filter((item) => item.id !== comment.id);
         onCommentsChange();
       });
       reviewQueueContainerEl.appendChild(item);
@@ -276,7 +273,7 @@ export function createReviewInspectorController(
     await renderOutline();
   }
 
-  function getSortedUnresolvedComments(): DiffReviewComment[] {
+  function getSortedSubmittedComments(): DiffReviewComment[] {
     const fileOrder = new Map(
       reviewDataFiles.map((file, index) => [file.id, index]),
     );
@@ -284,7 +281,6 @@ export function createReviewInspectorController(
       .filter(
         (comment) =>
           comment.status === "submitted" &&
-          !isCommentResolved(comment) &&
           comment.scope === state.currentScope,
       )
       .sort((left, right) => {
@@ -296,8 +292,8 @@ export function createReviewInspectorController(
       });
   }
 
-  function navigateUnresolvedComment(direction: "next" | "previous"): boolean {
-    const comments = getSortedUnresolvedComments();
+  function navigateSubmittedComment(direction: "next" | "previous"): boolean {
+    const comments = getSortedSubmittedComments();
     if (comments.length === 0) return false;
 
     const current = getCurrentNavigationTarget();
@@ -359,8 +355,8 @@ export function createReviewInspectorController(
     renderOutline,
     toggleFullOutlineVisibility,
     jumpToComment,
-    getSortedUnresolvedComments,
-    navigateUnresolvedComment,
+    getSortedSubmittedComments,
+    navigateSubmittedComment,
   };
 }
 

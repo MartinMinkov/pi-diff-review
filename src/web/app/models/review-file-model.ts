@@ -1,6 +1,5 @@
 import type {
   ChangeStatus,
-  DiffReviewComment,
   ReviewFile,
   ReviewNavigationSide,
   ReviewScope,
@@ -11,7 +10,6 @@ interface ReviewFileModelOptions {
   reviewDataFiles: ReviewFile[];
   state: ReviewState;
   isFileReviewed: (fileId: string) => boolean;
-  isCommentResolved: (comment: DiffReviewComment) => boolean;
 }
 
 export interface ReviewFileModel {
@@ -38,7 +36,7 @@ export interface ReviewFileModel {
 export function createReviewFileModel(
   options: ReviewFileModelOptions,
 ): ReviewFileModel {
-  const { reviewDataFiles, state, isFileReviewed, isCommentResolved } = options;
+  const { reviewDataFiles, state, isFileReviewed } = options;
 
   function getScopedFiles(): ReviewFile[] {
     switch (state.currentScope) {
@@ -138,8 +136,7 @@ export function createReviewFileModel(
           (comment) =>
             comment.fileId === file.id &&
             comment.scope === state.currentScope &&
-            comment.status === "submitted" &&
-            !isCommentResolved(comment),
+            comment.status === "submitted",
         );
         if (!hasComments) return false;
       }

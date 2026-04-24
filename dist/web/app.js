@@ -125,9 +125,6 @@
   }
 
   // src/web/app/shared/review-helpers.ts
-  function isCommentResolved(comment) {
-    return comment.resolved === true;
-  }
   function getCommentKind(comment) {
     return comment.kind ?? "feedback";
   }
@@ -149,7 +146,6 @@
     return {
       id: `${Date.now()}:${Math.random().toString(16).slice(2)}`,
       kind: partial.kind ?? "feedback",
-      resolved: partial.resolved ?? false,
       ...partial
     };
   }
@@ -188,7 +184,7 @@
 
   // src/web/app/models/review-file-model.ts
   function createReviewFileModel(options) {
-    const { reviewDataFiles, state, isFileReviewed, isCommentResolved: isCommentResolved2 } = options;
+    const { reviewDataFiles, state, isFileReviewed } = options;
     function getScopedFiles() {
       switch (state.currentScope) {
         case "git-diff":
@@ -265,7 +261,7 @@
           return false;
         }
         if (state.showCommentedFilesOnly) {
-          const hasComments = state.comments.some((comment) => comment.fileId === file.id && comment.scope === state.currentScope && comment.status === "submitted" && !isCommentResolved2(comment));
+          const hasComments = state.comments.some((comment) => comment.fileId === file.id && comment.scope === state.currentScope && comment.status === "submitted");
           if (!hasComments)
             return false;
         }
@@ -965,7 +961,6 @@
 `)[0] || "Comment";
     const toggleLabel = comment.collapsed ? "Expand comment" : "Collapse comment";
     const kind = comment.kind ?? "feedback";
-    const resolved = comment.resolved === true;
     container.innerHTML = `
     <div class="rounded-md border border-review-border bg-review-panel">
       <div class="flex items-center gap-2 px-3 py-2">
@@ -977,13 +972,11 @@
             <span class="flex items-center gap-2">
               <span class="block truncate text-xs font-semibold text-review-text">${escapeHtml(title)}</span>
               <span class="shrink-0 rounded-md border border-review-border bg-[#0d1117] px-2 py-0.5 text-[10px] font-medium text-review-muted">${escapeHtml(getCommentKindLabel2(kind))}</span>
-              ${resolved ? `<span class="shrink-0 rounded-md border border-[#2ea043]/35 bg-[#238636]/12 px-2 py-0.5 text-[10px] font-medium text-[#3fb950]">Resolved</span>` : ""}
             </span>
             ${comment.collapsed ? `<span class="mt-0.5 block truncate text-xs text-review-muted">${escapeHtml(preview)}</span>` : ""}
           </span>
         </button>
         <button data-action="edit" class="cursor-pointer rounded-md border border-transparent bg-transparent px-2 py-1 text-xs font-medium text-review-muted hover:bg-[#11161d] hover:text-review-text">Edit</button>
-        <button data-action="resolve" class="cursor-pointer rounded-md border border-transparent bg-transparent px-2 py-1 text-xs font-medium text-review-muted hover:bg-[#11161d] hover:text-review-text">${resolved ? "Reopen" : "Resolve"}</button>
         ${comment.collapsed ? "" : `<button data-action="delete" class="cursor-pointer rounded-md border border-transparent bg-transparent px-2 py-1 text-xs font-medium text-review-muted hover:bg-red-500/10 hover:text-red-400">Delete</button>`}
       </div>
       ${comment.collapsed ? "" : `<div class="border-t border-review-border px-3 py-3 whitespace-pre-wrap break-words text-sm text-review-text">${escapeHtml(comment.body)}</div>`}
@@ -992,7 +985,6 @@
     const toggleButton = container.querySelector("[data-action='toggle']");
     const deleteButton = container.querySelector("[data-action='delete']");
     const editButton = container.querySelector("[data-action='edit']");
-    const resolveButton = container.querySelector("[data-action='resolve']");
     toggleButton?.addEventListener("click", () => {
       comment.collapsed = !comment.collapsed;
       options.onUpdate();
@@ -1010,10 +1002,6 @@
           options.onUpdate();
         }
       });
-    });
-    resolveButton?.addEventListener("click", () => {
-      comment.resolved = !(comment.resolved === true);
-      options.onUpdate();
     });
     deleteButton?.addEventListener("click", options.onDelete);
     return container;
@@ -1042,7 +1030,7 @@
       openFile,
       handleShowChangedSymbols,
       handleAgentAction,
-      navigateUnresolvedComment
+      navigateSubmittedComment
     } = options;
     function openQuickOpenFiles() {
       const scopedFiles = getScopedFiles().slice().sort((left, right) => getScopeDisplayPath(left, state.currentScope).localeCompare(getScopeDisplayPath(right, state.currentScope)));
@@ -1188,19 +1176,19 @@ ${snippet}`;
             }
           },
           {
-            label: "Review: Next Unresolved Comment",
-            detail: "Jump to the next unresolved comment in this scope",
+            label: "Review: Next Submitted Comment",
+            detail: "Jump to the next submitted comment in this scope",
             hint: "N",
             onSelect: () => {
-              navigateUnresolvedComment("next");
+              navigateSubmittedComment("next");
             }
           },
           {
-            label: "Review: Previous Unresolved Comment",
-            detail: "Jump to the previous unresolved comment in this scope",
+            label: "Review: Previous Submitted Comment",
+            detail: "Jump to the previous submitted comment in this scope",
             hint: "Shift+N",
             onSelect: () => {
-              navigateUnresolvedComment("previous");
+              navigateSubmittedComment("previous");
             }
           },
           {
@@ -1360,13 +1348,12 @@ ${snippet}`;
       onCommentsChange,
       getCommentKind: getCommentKind2,
       getCommentKindLabel: getCommentKindLabel3,
-      isCommentResolved: isCommentResolved2,
       isCommentAnchorStale
     } = options;
     const outlineCache = new Map;
     let showFullOutline = false;
     function getActiveCommentQueue() {
-      return state.comments.filter((comment) => comment.status === "submitted" && !isCommentResolved2(comment) && comment.scope === state.currentScope).sort((left, right) => {
+      return state.comments.filter((comment) => comment.status === "submitted" && comment.scope === state.currentScope).sort((left, right) => {
         if (left.fileId !== right.fileId) {
           return left.fileId.localeCompare(right.fileId);
         }
@@ -1399,21 +1386,24 @@ ${snippet}`;
       comments.forEach((comment) => {
         const item = document.createElement("div");
         item.className = "rounded-md border border-review-border bg-review-panel-2 px-3 py-3";
+        const kindLabel = escapeHtml(getCommentKindLabel3(getCommentKind2(comment)));
+        const locationLabel = escapeHtml(getCommentLocationLabel(comment));
+        const body = escapeHtml(comment.body);
         item.innerHTML = `
         <div class="flex items-start justify-between gap-2">
           <button data-action="open" class="min-w-0 flex-1 text-left">
             <div class="flex items-center gap-2">
-              <div class="truncate text-xs font-semibold text-review-text">${getCommentKindLabel3(getCommentKind2(comment))}</div>
+              <div class="truncate text-xs font-semibold text-review-text">${kindLabel}</div>
               ${isCommentAnchorStale(comment) ? '<span class="shrink-0 rounded-md border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-300">Changed</span>' : ""}
             </div>
-            <div class="mt-1 truncate text-[11px] text-review-muted">${getCommentLocationLabel(comment)}</div>
+            <div class="mt-1 truncate text-[11px] text-review-muted">${locationLabel}</div>
           </button>
           <div class="flex items-center gap-2">
             <button data-action="edit" class="cursor-pointer rounded-md border border-review-border bg-[#0d1117] px-2 py-1 text-[11px] font-medium text-review-text hover:bg-[#1a212b]">Edit</button>
-            <button data-action="resolve" class="cursor-pointer rounded-md border border-review-border bg-[#0d1117] px-2 py-1 text-[11px] font-medium text-review-text hover:bg-[#1a212b]">Resolve</button>
+            <button data-action="delete" class="cursor-pointer rounded-md border border-review-border bg-[#0d1117] px-2 py-1 text-[11px] font-medium text-review-text hover:border-red-500/30 hover:bg-red-500/10 hover:text-red-400">Delete</button>
           </div>
         </div>
-        <div class="mt-2 line-clamp-3 whitespace-pre-wrap break-words text-sm text-review-text">${comment.body.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>
+        <div class="mt-2 line-clamp-3 whitespace-pre-wrap break-words text-sm text-review-text">${body}</div>
       `;
         item.querySelector("[data-action='open']")?.addEventListener("click", () => {
           jumpToComment(comment);
@@ -1424,15 +1414,15 @@ ${snippet}`;
             description: "Update this review instruction before you finish the review.",
             initialBody: comment.body,
             initialKind: getCommentKind2(comment),
-            onSave: ({ body, kind }) => {
-              comment.body = body;
+            onSave: ({ body: body2, kind }) => {
+              comment.body = body2;
               comment.kind = kind;
               onCommentsChange();
             }
           });
         });
-        item.querySelector("[data-action='resolve']")?.addEventListener("click", () => {
-          comment.resolved = true;
+        item.querySelector("[data-action='delete']")?.addEventListener("click", () => {
+          state.comments = state.comments.filter((item2) => item2.id !== comment.id);
           onCommentsChange();
         });
         reviewQueueContainerEl.appendChild(item);
@@ -1500,9 +1490,9 @@ ${snippet}`;
       showFullOutline = !showFullOutline;
       await renderOutline();
     }
-    function getSortedUnresolvedComments() {
+    function getSortedSubmittedComments() {
       const fileOrder = new Map(reviewDataFiles.map((file, index) => [file.id, index]));
-      return state.comments.filter((comment) => comment.status === "submitted" && !isCommentResolved2(comment) && comment.scope === state.currentScope).sort((left, right) => {
+      return state.comments.filter((comment) => comment.status === "submitted" && comment.scope === state.currentScope).sort((left, right) => {
         const leftOrder = fileOrder.get(left.fileId) ?? Number.MAX_SAFE_INTEGER;
         const rightOrder = fileOrder.get(right.fileId) ?? Number.MAX_SAFE_INTEGER;
         if (leftOrder !== rightOrder)
@@ -1510,8 +1500,8 @@ ${snippet}`;
         return (left.startLine ?? 0) - (right.startLine ?? 0);
       });
     }
-    function navigateUnresolvedComment(direction) {
-      const comments = getSortedUnresolvedComments();
+    function navigateSubmittedComment(direction) {
+      const comments = getSortedSubmittedComments();
       if (comments.length === 0)
         return false;
       const current = getCurrentNavigationTarget();
@@ -1562,8 +1552,8 @@ ${snippet}`;
       renderOutline,
       toggleFullOutlineVisibility,
       jumpToComment,
-      getSortedUnresolvedComments,
-      navigateUnresolvedComment
+      getSortedSubmittedComments,
+      navigateSubmittedComment
     };
   }
   function renderSymbolList(options) {
@@ -1664,8 +1654,6 @@ ${snippet}`;
     function getSubmittedCommentCount(fileId) {
       return state.comments.filter((comment) => {
         if (comment.status !== "submitted")
-          return false;
-        if (comment.resolved === true)
           return false;
         if (comment.scope !== state.currentScope)
           return false;
@@ -1958,6 +1946,8 @@ ${snippet}`;
   }
 
   // src/web/features/editor/review-editor.ts
+  var NAVIGATION_HOVER_DEBOUNCE_MS = 80;
+  var MAX_NAVIGATION_HOVER_CACHE_ENTRIES = 300;
   function scrollKey(scope, fileId) {
     return `${scope}:${fileId}`;
   }
@@ -2006,6 +1996,24 @@ ${snippet}`;
     let editorResizeObserver = null;
     let pendingNavigationTarget = null;
     let lastFocusedSide = "modified";
+    let navigationModifierPressed = false;
+    const navigationHoverCache = new Map;
+    const navigationHoverRequests = new Map;
+    let navigationHoverCacheVersion = 0;
+    function clearNavigationHoverCache() {
+      navigationHoverCache.clear();
+      navigationHoverRequests.clear();
+      navigationHoverCacheVersion += 1;
+    }
+    function rememberNavigationHoverTarget(cacheKey, target) {
+      if (navigationHoverCache.size >= MAX_NAVIGATION_HOVER_CACHE_ENTRIES) {
+        const oldestKey = navigationHoverCache.keys().next().value;
+        if (oldestKey) {
+          navigationHoverCache.delete(oldestKey);
+        }
+      }
+      navigationHoverCache.set(cacheKey, target);
+    }
     function saveCurrentScrollPosition() {
       if (!diffEditor || !state.activeFileId)
         return;
@@ -2262,6 +2270,23 @@ ${requestState.error}`;
         selectedText
       };
     }
+    function buildNavigationRequestFromModel(model, position) {
+      if (!model)
+        return null;
+      const descriptor = navigationResolver.parseModelUri(model.uri);
+      if (!descriptor)
+        return null;
+      return {
+        fileId: descriptor.fileId,
+        scope: descriptor.scope,
+        side: descriptor.side,
+        sourcePath: descriptor.sourcePath,
+        languageId: model.getLanguageId?.() || inferLanguage(descriptor.sourcePath),
+        content: model.getValue(),
+        lineNumber: position.lineNumber,
+        column: position.column
+      };
+    }
     function maybeRevealPendingNavigation() {
       if (!pendingNavigationTarget || !diffEditor)
         return;
@@ -2295,6 +2320,7 @@ ${requestState.error}`;
     function mountFile(mountOptions = {}) {
       if (!diffEditor || !monacoApi)
         return;
+      clearNavigationHoverCache();
       const file = activeFile();
       if (!file) {
         currentFileLabelEl.textContent = "No file selected";
@@ -2406,36 +2432,174 @@ ${requestState.error}`;
         }
       });
     }
+    function createNavigationHoverActions(editor) {
+      let hoverDecorations = [];
+      let hoveredModel = null;
+      let hoveredPosition = null;
+      let hoverTimer = null;
+      let requestSequence = 0;
+      function clearHoverIndicator() {
+        if (hoverTimer != null) {
+          window.clearTimeout(hoverTimer);
+          hoverTimer = null;
+        }
+        requestSequence += 1;
+        hoverDecorations = editor.deltaDecorations(hoverDecorations, []);
+        editor.getDomNode?.()?.classList.remove("review-nav-link-cursor");
+      }
+      async function resolveHoverTarget(cacheKey, request, force) {
+        const cached = force ? undefined : navigationHoverCache.get(cacheKey);
+        if (cached !== undefined) {
+          return cached;
+        }
+        const cacheVersion = navigationHoverCacheVersion;
+        let pending = navigationHoverRequests.get(cacheKey);
+        if (pending == null) {
+          pending = (async () => {
+            const heuristicTarget = resolveNavigationTarget(request);
+            if (heuristicTarget || !supportsSemanticDefinition(request.languageId)) {
+              return heuristicTarget;
+            }
+            return resolveDefinitionTarget(request, { silent: true });
+          })();
+          navigationHoverRequests.set(cacheKey, pending);
+          const clearPending = () => {
+            if (navigationHoverRequests.get(cacheKey) === pending) {
+              navigationHoverRequests.delete(cacheKey);
+            }
+          };
+          pending.then(clearPending, clearPending);
+        }
+        const target = await pending;
+        if (cacheVersion === navigationHoverCacheVersion) {
+          rememberNavigationHoverTarget(cacheKey, target);
+        }
+        return target;
+      }
+      async function updateHoverIndicator(force = false) {
+        hoverTimer = null;
+        if (!monacoApi || !navigationModifierPressed) {
+          clearHoverIndicator();
+          return;
+        }
+        const model = hoveredModel;
+        const position = hoveredPosition;
+        if (!model || !position) {
+          clearHoverIndicator();
+          return;
+        }
+        const word = model.getWordAtPosition?.(position);
+        if (!word) {
+          clearHoverIndicator();
+          return;
+        }
+        const request = buildNavigationRequestFromModel(model, position);
+        if (!request) {
+          clearHoverIndicator();
+          return;
+        }
+        const cacheKey = [
+          request.fileId,
+          request.scope,
+          request.side,
+          request.lineNumber,
+          word.startColumn,
+          word.endColumn,
+          request.languageId
+        ].join(":");
+        const pendingId = ++requestSequence;
+        const target = await resolveHoverTarget(cacheKey, request, force);
+        if (pendingId !== requestSequence) {
+          return;
+        }
+        if (!target) {
+          clearHoverIndicator();
+          return;
+        }
+        hoverDecorations = editor.deltaDecorations(hoverDecorations, [
+          {
+            range: new monacoApi.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn),
+            options: {
+              inlineClassName: "review-nav-link-token"
+            }
+          }
+        ]);
+        editor.getDomNode?.()?.classList.add("review-nav-link-cursor");
+      }
+      function scheduleHoverIndicator(force = false) {
+        if (hoverTimer != null) {
+          window.clearTimeout(hoverTimer);
+        }
+        hoverTimer = window.setTimeout(() => {
+          updateHoverIndicator(force);
+        }, NAVIGATION_HOVER_DEBOUNCE_MS);
+      }
+      function syncModifierState(isPressed) {
+        navigationModifierPressed = isPressed;
+        if (!isPressed) {
+          clearHoverIndicator();
+          return;
+        }
+        scheduleHoverIndicator();
+      }
+      editor.onMouseMove((event) => {
+        const browserEvent = event.event?.browserEvent;
+        navigationModifierPressed = Boolean(browserEvent?.metaKey || browserEvent?.ctrlKey);
+        const lineNumber = event.target.position?.lineNumber;
+        const column = event.target.position?.column;
+        if (!lineNumber || !column) {
+          hoveredModel = null;
+          hoveredPosition = null;
+          clearHoverIndicator();
+          return;
+        }
+        hoveredModel = editor.getModel?.() ?? null;
+        hoveredPosition = { lineNumber, column };
+        if (!navigationModifierPressed) {
+          clearHoverIndicator();
+          return;
+        }
+        scheduleHoverIndicator();
+      });
+      editor.onMouseLeave(() => {
+        hoveredModel = null;
+        hoveredPosition = null;
+        clearHoverIndicator();
+      });
+      return {
+        syncModifierState
+      };
+    }
     function registerNavigationSupport() {
       const languages = ["typescript", "javascript", "go", "rust", "c", "cpp"];
       for (const languageId of languages) {
-        const buildRequest = (model, position) => {
-          const context = navigationResolver.parseModelUri(model?.uri);
-          if (!context)
-            return null;
-          return {
-            fileId: context.fileId,
-            scope: context.scope,
-            side: context.side,
-            sourcePath: context.sourcePath,
-            languageId,
-            content: model.getValue(),
-            lineNumber: position.lineNumber,
-            column: position.column
-          };
-        };
+        const buildRequest = (model, position) => buildNavigationRequestFromModel(model, {
+          lineNumber: position.lineNumber,
+          column: position.column
+        });
         monacoApi.languages.registerDefinitionProvider(languageId, {
           async provideDefinition(model, position, token) {
             const request = buildRequest(model, position);
             if (!request)
               return null;
-            const target = await resolveDefinitionTarget(request);
+            const target = await resolveDefinitionTarget(request, {
+              silent: true
+            });
             if (token?.isCancellationRequested)
               return null;
             if (!target)
               return null;
+            const source = {
+              fileId: request.fileId,
+              scope: request.scope,
+              side: request.side,
+              line: request.lineNumber,
+              column: request.column
+            };
             return {
-              uri: navigationResolver.buildTargetUri(monacoApi, target),
+              uri: navigationResolver.buildTargetUri(monacoApi, target, {
+                source
+              }),
               range: new monacoApi.Range(target.line, target.column, target.line, target.column)
             };
           }
@@ -2445,7 +2609,7 @@ ${requestState.error}`;
             const request = buildRequest(model, position);
             if (!request)
               return null;
-            const target = resolveNavigationTarget(request) ?? await resolveDefinitionTarget(request);
+            const target = resolveNavigationTarget(request) ?? await resolveDefinitionTarget(request, { silent: true });
             if (token?.isCancellationRequested)
               return null;
             if (!target)
@@ -2475,8 +2639,9 @@ Target: \`${describeNavigationTarget(target)}\`
             const target = navigationResolver.parseTargetUri(resource);
             if (!target)
               return false;
-            revealNavigationTarget(target);
-            openNavigationTarget(target);
+            openNavigationTarget(target, {
+              source: navigationResolver.parseTargetSourceUri(resource)
+            });
             return true;
           }
         });
@@ -2531,6 +2696,8 @@ Target: \`${describeNavigationTarget(target)}\`
         });
         createGlyphHoverActions(diffEditor.getOriginalEditor(), "original");
         createGlyphHoverActions(diffEditor.getModifiedEditor(), "modified");
+        const originalNavigationHover = createNavigationHoverActions(diffEditor.getOriginalEditor());
+        const modifiedNavigationHover = createNavigationHoverActions(diffEditor.getModifiedEditor());
         diffEditor.getOriginalEditor().onDidFocusEditorText(() => {
           lastFocusedSide = "original";
           emitEditorContextChange();
@@ -2556,6 +2723,20 @@ Target: \`${describeNavigationTarget(target)}\`
           lastFocusedSide = "modified";
           const line = diffEditor?.getModifiedEditor().getVisibleRanges?.()?.[0]?.startLineNumber;
           emitEditorContextChange(line);
+        });
+        window.addEventListener("keydown", (event) => {
+          const isPressed = event.metaKey || event.ctrlKey;
+          originalNavigationHover.syncModifierState(isPressed);
+          modifiedNavigationHover.syncModifierState(isPressed);
+        });
+        window.addEventListener("keyup", (event) => {
+          const isPressed = event.metaKey || event.ctrlKey;
+          originalNavigationHover.syncModifierState(isPressed);
+          modifiedNavigationHover.syncModifierState(isPressed);
+        });
+        window.addEventListener("blur", () => {
+          originalNavigationHover.syncModifierState(false);
+          modifiedNavigationHover.syncModifierState(false);
         });
         registerNavigationSupport();
         if (typeof ResizeObserver !== "undefined") {
@@ -2625,15 +2806,23 @@ Target: \`${describeNavigationTarget(target)}\`
         }).toString()
       });
     }
-    function buildTargetUri(monacoApi, target) {
+    function buildTargetUri(monacoApi, target, options = {}) {
+      const query = new URLSearchParams({
+        scope: target.scope,
+        line: String(target.line),
+        column: String(target.column)
+      });
+      if (options.source) {
+        query.set("sourceFileId", options.source.fileId);
+        query.set("sourceScope", options.source.scope);
+        query.set("sourceSide", options.source.side);
+        query.set("sourceLine", String(options.source.line));
+        query.set("sourceColumn", String(options.source.column));
+      }
       return monacoApi.Uri.from({
         scheme: REVIEW_TARGET_SCHEME,
         path: `/${encodeURIComponent(target.fileId)}/${target.side}`,
-        query: new URLSearchParams({
-          scope: target.scope,
-          line: String(target.line),
-          column: String(target.column)
-        }).toString()
+        query: query.toString()
       });
     }
     function parseModelUri(uri) {
@@ -2676,6 +2865,29 @@ Target: \`${describeNavigationTarget(target)}\`
         return null;
       return {
         fileId: decodeURIComponent(parts[0]),
+        scope,
+        side,
+        line: Number.isFinite(line) && line > 0 ? line : 1,
+        column: Number.isFinite(column) && column > 0 ? column : 1
+      };
+    }
+    function parseTargetSourceUri(uri) {
+      if (!uri || typeof uri !== "object")
+        return null;
+      const value = uri;
+      if (value.scheme !== REVIEW_TARGET_SCHEME)
+        return null;
+      const params = new URLSearchParams(String(value.query || ""));
+      const fileId = params.get("sourceFileId");
+      const scope = params.get("sourceScope");
+      const side = params.get("sourceSide");
+      const line = Number(params.get("sourceLine") || "1");
+      const column = Number(params.get("sourceColumn") || "1");
+      if (!fileId || !isReviewScope(scope) || !isNavigationSide(side)) {
+        return null;
+      }
+      return {
+        fileId,
         scope,
         side,
         line: Number.isFinite(line) && line > 0 ? line : 1,
@@ -2735,7 +2947,8 @@ Target: \`${describeNavigationTarget(target)}\`
       buildModelUri,
       buildTargetUri,
       parseModelUri,
-      parseTargetUri
+      parseTargetUri,
+      parseTargetSourceUri
     };
   }
   function chooseNavigationTarget(file, scope, side) {
@@ -3388,8 +3601,7 @@ Target: \`${describeNavigationTarget(target)}\`
   var fileModel = createReviewFileModel({
     reviewDataFiles: reviewData.files,
     state,
-    isFileReviewed: (fileId) => state.reviewedFiles[fileId] === true,
-    isCommentResolved
+    isFileReviewed: (fileId) => state.reviewedFiles[fileId] === true
   });
   function isFileReviewed(fileId) {
     return state.reviewedFiles[fileId] === true;
@@ -3558,9 +3770,11 @@ Target: \`${describeNavigationTarget(target)}\`
     const label = languageId === "rust" ? "Rust navigation unavailable" : languageId === "go" ? "Go navigation unavailable" : "Definition lookup unavailable";
     return detail ? `${label}: ${detail}` : label;
   }
-  async function resolveDefinitionTarget(request) {
+  async function resolveDefinitionTarget(request, options = {}) {
     const semanticTarget = supportsSemanticDefinition(request.languageId) ? await requestDefinitionTarget(request).catch((error) => {
-      flashSummary(getNavigationErrorMessage(request.languageId, error));
+      if (!options.silent) {
+        flashSummary(getNavigationErrorMessage(request.languageId, error));
+      }
       return null;
     }) : null;
     return semanticTarget ?? navigationResolver.resolveTarget(request);
@@ -3610,12 +3824,12 @@ Target: \`${describeNavigationTarget(target)}\`
     const sideSuffix = selection.scope === "all-files" ? "" : selection.side === "original" ? " (old)" : " (new)";
     return `${path}:${range}${sideSuffix}`;
   }
-  function navigateUnresolvedComment(direction) {
-    if (!inspectorController?.navigateUnresolvedComment(direction)) {
-      flashSummary("No unresolved comments in this scope");
+  function navigateSubmittedComment(direction) {
+    if (!inspectorController?.navigateSubmittedComment(direction)) {
+      flashSummary("No submitted comments in this scope");
       return;
     }
-    flashSummary(direction === "next" ? "Jumped to next unresolved comment" : "Jumped to previous unresolved comment");
+    flashSummary(direction === "next" ? "Jumped to next submitted comment" : "Jumped to previous submitted comment");
   }
   function renderReviewQueue() {
     inspectorController?.renderReviewQueue();
@@ -3635,10 +3849,10 @@ Target: \`${describeNavigationTarget(target)}\`
     updateNavigationButtons();
     renderOutline();
   }
-  function recordNavigationCheckpoint() {
+  function recordNavigationCheckpoint(checkpoint = null) {
     if (isHistoryNavigation)
       return;
-    const current = getCurrentNavigationTarget();
+    const current = checkpoint ?? getCurrentNavigationTarget();
     if (!current)
       return;
     const previous = navigationBackStack[navigationBackStack.length - 1] ?? null;
@@ -3823,7 +4037,7 @@ Target: \`${describeNavigationTarget(target)}\`
     ensureFileLoaded(fileId, state.currentScope);
     updateNavigationButtons();
   }
-  function openNavigationTarget(target) {
+  function openNavigationTarget(target, options = {}) {
     const targetFile = reviewData.files.find((file) => file.id === target.fileId);
     if (!targetFile)
       return;
@@ -3831,7 +4045,7 @@ Target: \`${describeNavigationTarget(target)}\`
     const fileChanged = state.activeFileId !== target.fileId;
     const current = getCurrentNavigationTarget();
     if (!sameNavigationTarget(current, target)) {
-      recordNavigationCheckpoint();
+      recordNavigationCheckpoint(options.source ?? null);
     }
     if (scopeChanged || fileChanged) {
       editorController?.saveCurrentScrollPosition();
@@ -4089,7 +4303,6 @@ Target: \`${describeNavigationTarget(target)}\`
     onCommentsChange: updateCommentsUI,
     getCommentKind: (comment) => getCommentKind(comment),
     getCommentKindLabel,
-    isCommentResolved,
     isCommentAnchorStale
   });
   toggleOutlineButton.addEventListener("click", () => {
@@ -4116,7 +4329,7 @@ Target: \`${describeNavigationTarget(target)}\`
     openFile,
     handleShowChangedSymbols,
     handleAgentAction,
-    navigateUnresolvedComment
+    navigateSubmittedComment
   });
   function openQuickOpenFiles() {
     commandPaletteController?.openQuickOpenFiles();
@@ -4207,9 +4420,8 @@ Target: \`${describeNavigationTarget(target)}\`
       comments: state.comments.map((comment) => ({
         ...comment,
         body: comment.body.trim(),
-        kind: getCommentKind(comment),
-        resolved: isCommentResolved(comment)
-      })).filter((comment) => comment.status === "submitted" && comment.body.length > 0 && comment.resolved !== true)
+        kind: getCommentKind(comment)
+      })).filter((comment) => comment.status === "submitted" && comment.body.length > 0)
     };
     pendingSubmitRequestId = requestId;
     setSubmitPendingState(true);
@@ -4443,7 +4655,7 @@ Target: \`${describeNavigationTarget(target)}\`
     }
     if (event.key.toLowerCase() === "n" && !event.metaKey && !event.ctrlKey && !event.altKey) {
       event.preventDefault();
-      navigateUnresolvedComment(event.shiftKey ? "previous" : "next");
+      navigateSubmittedComment(event.shiftKey ? "previous" : "next");
       return;
     }
     if (event.key === "e" && !event.metaKey && !event.ctrlKey && !event.altKey) {

@@ -10,7 +10,6 @@ import {
   createComment,
   getCommentKind,
   getCommentKindLabel,
-  isCommentResolved,
   sameNavigationTarget,
   writeToClipboard,
 } from "./shared/review-helpers.js";
@@ -163,8 +162,9 @@ const pendingReferencesWaiters = new Map<
     reject: (reason?: unknown) => void;
   }>
 >();
-const navigationBackStack: ReviewNavigationTarget[] = [];
-const navigationForwardStack: ReviewNavigationTarget[] = [];
+type NavigationCheckpoint = ReviewNavigationTarget;
+const navigationBackStack: NavigationCheckpoint[] = [];
+const navigationForwardStack: NavigationCheckpoint[] = [];
 let isHistoryNavigation = false;
 let currentNavigationRequestAvailable = false;
 let summaryFlashTimeout: number | null = null;
@@ -175,7 +175,6 @@ const fileModel = createReviewFileModel({
   reviewDataFiles: reviewData.files,
   state,
   isFileReviewed: (fileId) => state.reviewedFiles[fileId] === true,
-  isCommentResolved,
 });
 
 function isFileReviewed(fileId: string): boolean {
@@ -414,10 +413,13 @@ function getNavigationErrorMessage(
 
 async function resolveDefinitionTarget(
   request: ReviewNavigationRequest,
+  options: { silent?: boolean } = {},
 ): Promise<ReviewNavigationTarget | null> {
   const semanticTarget = supportsSemanticDefinition(request.languageId)
     ? await requestDefinitionTarget(request).catch((error: unknown) => {
-        flashSummary(getNavigationErrorMessage(request.languageId, error));
+        if (!options.silent) {
+          flashSummary(getNavigationErrorMessage(request.languageId, error));
+        }
         return null;
       })
     : null;
@@ -503,15 +505,15 @@ function getSelectionReference(): string | null {
   return `${path}:${range}${sideSuffix}`;
 }
 
-function navigateUnresolvedComment(direction: "next" | "previous"): void {
-  if (!inspectorController?.navigateUnresolvedComment(direction)) {
-    flashSummary("No unresolved comments in this scope");
+function navigateSubmittedComment(direction: "next" | "previous"): void {
+  if (!inspectorController?.navigateSubmittedComment(direction)) {
+    flashSummary("No submitted comments in this scope");
     return;
   }
   flashSummary(
     direction === "next"
-      ? "Jumped to next unresolved comment"
-      : "Jumped to previous unresolved comment",
+      ? "Jumped to next submitted comment"
+      : "Jumped to previous submitted comment",
   );
 }
 
@@ -544,9 +546,11 @@ function updateEditorContextUI(context: {
   void renderOutline();
 }
 
-function recordNavigationCheckpoint(): void {
+function recordNavigationCheckpoint(
+  checkpoint: NavigationCheckpoint | null = null,
+): void {
   if (isHistoryNavigation) return;
-  const current = getCurrentNavigationTarget();
+  const current = checkpoint ?? getCurrentNavigationTarget();
   if (!current) return;
   const previous = navigationBackStack[navigationBackStack.length - 1] ?? null;
   if (!sameNavigationTarget(previous, current)) {
@@ -797,7 +801,10 @@ function openFile(fileId: string): void {
   updateNavigationButtons();
 }
 
-function openNavigationTarget(target: ReviewNavigationTarget): void {
+function openNavigationTarget(
+  target: ReviewNavigationTarget,
+  options: { source?: NavigationCheckpoint | null } = {},
+): void {
   const targetFile = reviewData.files.find((file) => file.id === target.fileId);
   if (!targetFile) return;
 
@@ -805,7 +812,7 @@ function openNavigationTarget(target: ReviewNavigationTarget): void {
   const fileChanged = state.activeFileId !== target.fileId;
   const current = getCurrentNavigationTarget();
   if (!sameNavigationTarget(current, target)) {
-    recordNavigationCheckpoint();
+    recordNavigationCheckpoint(options.source ?? null);
   }
 
   if (scopeChanged || fileChanged) {
@@ -1138,7 +1145,6 @@ inspectorController = createReviewInspectorController({
   onCommentsChange: updateCommentsUI,
   getCommentKind: (comment) => getCommentKind(comment),
   getCommentKindLabel,
-  isCommentResolved,
   isCommentAnchorStale,
 });
 
@@ -1167,7 +1173,7 @@ commandPaletteController = createReviewCommandPaletteController({
   openFile,
   handleShowChangedSymbols,
   handleAgentAction,
-  navigateUnresolvedComment,
+  navigateSubmittedComment,
 });
 
 function openQuickOpenFiles(): void {
@@ -1270,13 +1276,11 @@ function handleSubmitReview() {
         ...comment,
         body: comment.body.trim(),
         kind: getCommentKind(comment),
-        resolved: isCommentResolved(comment),
       }))
       .filter(
         (comment) =>
           comment.status === "submitted" &&
-          comment.body.length > 0 &&
-          comment.resolved !== true,
+          comment.body.length > 0,
       ),
   };
   pendingSubmitRequestId = requestId;
@@ -1556,7 +1560,7 @@ window.addEventListener("keydown", (event) => {
 
   if (event.key.toLowerCase() === "n" && !event.metaKey && !event.ctrlKey && !event.altKey) {
     event.preventDefault();
-    navigateUnresolvedComment(event.shiftKey ? "previous" : "next");
+    navigateSubmittedComment(event.shiftKey ? "previous" : "next");
     return;
   }
 

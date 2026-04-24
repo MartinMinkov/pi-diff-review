@@ -79,9 +79,13 @@ interface ReviewEditorOptions {
   ) => ReviewNavigationTarget | null;
   resolveDefinitionTarget: (
     request: ReviewNavigationRequest,
+    options?: { silent?: boolean },
   ) => Promise<ReviewNavigationTarget | null>;
   describeNavigationTarget: (target: ReviewNavigationTarget) => string;
-  openNavigationTarget: (target: ReviewNavigationTarget) => void;
+  openNavigationTarget: (
+    target: ReviewNavigationTarget,
+    options?: { source?: ReviewNavigationTarget | null },
+  ) => void;
   navigationResolver: ReviewNavigationResolver;
   editorContainerEl: HTMLDivElement;
   currentFileLabelEl: HTMLDivElement;
@@ -109,6 +113,9 @@ interface ReviewEditorRequestResult {
   originalContent: string;
   modifiedContent: string;
 }
+
+const NAVIGATION_HOVER_DEBOUNCE_MS = 80;
+const MAX_NAVIGATION_HOVER_CACHE_ENTRIES = 300;
 
 export interface ReviewEditorSelectionContext {
   fileId: string;
@@ -176,6 +183,32 @@ export function createReviewEditor(
   let editorResizeObserver: ResizeObserver | null = null;
   let pendingNavigationTarget: ReviewNavigationTarget | null = null;
   let lastFocusedSide: ReviewNavigationSide = "modified";
+  let navigationModifierPressed = false;
+  const navigationHoverCache = new Map<string, ReviewNavigationTarget | null>();
+  const navigationHoverRequests = new Map<
+    string,
+    Promise<ReviewNavigationTarget | null>
+  >();
+  let navigationHoverCacheVersion = 0;
+
+  function clearNavigationHoverCache(): void {
+    navigationHoverCache.clear();
+    navigationHoverRequests.clear();
+    navigationHoverCacheVersion += 1;
+  }
+
+  function rememberNavigationHoverTarget(
+    cacheKey: string,
+    target: ReviewNavigationTarget | null,
+  ): void {
+    if (navigationHoverCache.size >= MAX_NAVIGATION_HOVER_CACHE_ENTRIES) {
+      const oldestKey = navigationHoverCache.keys().next().value;
+      if (oldestKey) {
+        navigationHoverCache.delete(oldestKey);
+      }
+    }
+    navigationHoverCache.set(cacheKey, target);
+  }
 
   function saveCurrentScrollPosition() {
     if (!diffEditor || !state.activeFileId) return;
@@ -508,6 +541,27 @@ export function createReviewEditor(
     };
   }
 
+  function buildNavigationRequestFromModel(
+    model: MonacoTextModel | null,
+    position: MonacoPosition,
+  ): ReviewNavigationRequest | null {
+    if (!model) return null;
+    const descriptor = navigationResolver.parseModelUri(model.uri);
+    if (!descriptor) return null;
+
+    return {
+      fileId: descriptor.fileId,
+      scope: descriptor.scope,
+      side: descriptor.side,
+      sourcePath: descriptor.sourcePath,
+      languageId:
+        model.getLanguageId?.() || inferLanguage(descriptor.sourcePath),
+      content: model.getValue(),
+      lineNumber: position.lineNumber,
+      column: position.column,
+    };
+  }
+
   function maybeRevealPendingNavigation(): void {
     if (!pendingNavigationTarget || !diffEditor) return;
     const file = activeFile();
@@ -540,6 +594,7 @@ export function createReviewEditor(
 
   function mountFile(mountOptions: ReviewMountOptions = {}): void {
     if (!diffEditor || !monacoApi) return;
+    clearNavigationHoverCache();
     const file = activeFile();
 
     if (!file) {
@@ -674,6 +729,175 @@ export function createReviewEditor(
     });
   }
 
+  function createNavigationHoverActions(editor: MonacoCodeEditor) {
+    let hoverDecorations: string[] = [];
+    let hoveredModel: MonacoTextModel | null = null;
+    let hoveredPosition: MonacoPosition | null = null;
+    let hoverTimer: number | null = null;
+    let requestSequence = 0;
+
+    function clearHoverIndicator(): void {
+      if (hoverTimer != null) {
+        window.clearTimeout(hoverTimer);
+        hoverTimer = null;
+      }
+      requestSequence += 1;
+      hoverDecorations = editor.deltaDecorations(hoverDecorations, []);
+      editor.getDomNode?.()?.classList.remove("review-nav-link-cursor");
+    }
+
+    async function resolveHoverTarget(
+      cacheKey: string,
+      request: ReviewNavigationRequest,
+      force: boolean,
+    ): Promise<ReviewNavigationTarget | null> {
+      const cached = force ? undefined : navigationHoverCache.get(cacheKey);
+      if (cached !== undefined) {
+        return cached;
+      }
+
+      const cacheVersion = navigationHoverCacheVersion;
+      let pending = navigationHoverRequests.get(cacheKey);
+      if (pending == null) {
+        pending = (async () => {
+          const heuristicTarget = resolveNavigationTarget(request);
+          if (heuristicTarget || !supportsSemanticDefinition(request.languageId)) {
+            return heuristicTarget;
+          }
+          return resolveDefinitionTarget(request, { silent: true });
+        })();
+        navigationHoverRequests.set(cacheKey, pending);
+        const clearPending = () => {
+          if (navigationHoverRequests.get(cacheKey) === pending) {
+            navigationHoverRequests.delete(cacheKey);
+          }
+        };
+        void pending.then(clearPending, clearPending);
+      }
+
+      const target = await pending;
+      if (cacheVersion === navigationHoverCacheVersion) {
+        rememberNavigationHoverTarget(cacheKey, target);
+      }
+      return target;
+    }
+
+    async function updateHoverIndicator(force = false): Promise<void> {
+      hoverTimer = null;
+      if (!monacoApi || !navigationModifierPressed) {
+        clearHoverIndicator();
+        return;
+      }
+
+      const model = hoveredModel;
+      const position = hoveredPosition;
+      if (!model || !position) {
+        clearHoverIndicator();
+        return;
+      }
+
+      const word = model.getWordAtPosition?.(position);
+      if (!word) {
+        clearHoverIndicator();
+        return;
+      }
+
+      const request = buildNavigationRequestFromModel(model, position);
+      if (!request) {
+        clearHoverIndicator();
+        return;
+      }
+
+      const cacheKey = [
+        request.fileId,
+        request.scope,
+        request.side,
+        request.lineNumber,
+        word.startColumn,
+        word.endColumn,
+        request.languageId,
+      ].join(":");
+
+      const pendingId = ++requestSequence;
+      const target = await resolveHoverTarget(cacheKey, request, force);
+
+      if (pendingId !== requestSequence) {
+        return;
+      }
+
+      if (!target) {
+        clearHoverIndicator();
+        return;
+      }
+
+      hoverDecorations = editor.deltaDecorations(hoverDecorations, [
+        {
+          range: new monacoApi.Range(
+            position.lineNumber,
+            word.startColumn,
+            position.lineNumber,
+            word.endColumn,
+          ),
+          options: {
+            inlineClassName: "review-nav-link-token",
+          },
+        },
+      ]);
+      editor.getDomNode?.()?.classList.add("review-nav-link-cursor");
+    }
+
+    function scheduleHoverIndicator(force = false): void {
+      if (hoverTimer != null) {
+        window.clearTimeout(hoverTimer);
+      }
+      hoverTimer = window.setTimeout(() => {
+        void updateHoverIndicator(force);
+      }, NAVIGATION_HOVER_DEBOUNCE_MS);
+    }
+
+    function syncModifierState(isPressed: boolean): void {
+      navigationModifierPressed = isPressed;
+      if (!isPressed) {
+        clearHoverIndicator();
+        return;
+      }
+      scheduleHoverIndicator();
+    }
+
+    editor.onMouseMove((event) => {
+      const browserEvent = event.event?.browserEvent;
+      navigationModifierPressed = Boolean(
+        browserEvent?.metaKey || browserEvent?.ctrlKey,
+      );
+      const lineNumber = event.target.position?.lineNumber;
+      const column = event.target.position?.column;
+      if (!lineNumber || !column) {
+        hoveredModel = null;
+        hoveredPosition = null;
+        clearHoverIndicator();
+        return;
+      }
+
+      hoveredModel = editor.getModel?.() ?? null;
+      hoveredPosition = { lineNumber, column };
+      if (!navigationModifierPressed) {
+        clearHoverIndicator();
+        return;
+      }
+      scheduleHoverIndicator();
+    });
+
+    editor.onMouseLeave(() => {
+      hoveredModel = null;
+      hoveredPosition = null;
+      clearHoverIndicator();
+    });
+
+    return {
+      syncModifierState,
+    };
+  }
+
   function registerNavigationSupport(): void {
     const languages = ["typescript", "javascript", "go", "rust", "c", "cpp"];
 
@@ -681,21 +905,11 @@ export function createReviewEditor(
       const buildRequest = (
         model: MonacoTextModel,
         position: MonacoPosition,
-      ): ReviewNavigationRequest | null => {
-        const context = navigationResolver.parseModelUri(model?.uri);
-        if (!context) return null;
-
-        return {
-          fileId: context.fileId,
-          scope: context.scope,
-          side: context.side,
-          sourcePath: context.sourcePath,
-          languageId,
-          content: model.getValue(),
+      ): ReviewNavigationRequest | null =>
+        buildNavigationRequestFromModel(model, {
           lineNumber: position.lineNumber,
           column: position.column,
-        };
-      };
+        });
 
       monacoApi.languages.registerDefinitionProvider(languageId, {
         async provideDefinition(
@@ -706,12 +920,23 @@ export function createReviewEditor(
           const request = buildRequest(model, position);
           if (!request) return null;
 
-          const target = await resolveDefinitionTarget(request);
+          const target = await resolveDefinitionTarget(request, {
+            silent: true,
+          });
           if (token?.isCancellationRequested) return null;
           if (!target) return null;
+          const source = {
+            fileId: request.fileId,
+            scope: request.scope,
+            side: request.side,
+            line: request.lineNumber,
+            column: request.column,
+          };
 
           return {
-            uri: navigationResolver.buildTargetUri(monacoApi, target),
+            uri: navigationResolver.buildTargetUri(monacoApi, target, {
+              source,
+            }),
             range: new monacoApi.Range(
               target.line,
               target.column,
@@ -733,7 +958,7 @@ export function createReviewEditor(
 
           const target =
             resolveNavigationTarget(request) ??
-            (await resolveDefinitionTarget(request));
+            (await resolveDefinitionTarget(request, { silent: true }));
           if (token?.isCancellationRequested) return null;
           if (!target) return null;
           const actionLabel = navigationActionLabel(request.languageId);
@@ -763,8 +988,9 @@ export function createReviewEditor(
         openCodeEditor(_source: unknown, resource: unknown) {
           const target = navigationResolver.parseTargetUri(resource);
           if (!target) return false;
-          revealNavigationTarget(target);
-          openNavigationTarget(target);
+          openNavigationTarget(target, {
+            source: navigationResolver.parseTargetSourceUri(resource),
+          });
           return true;
         },
       });
@@ -825,6 +1051,12 @@ export function createReviewEditor(
 
       createGlyphHoverActions(diffEditor.getOriginalEditor(), "original");
       createGlyphHoverActions(diffEditor.getModifiedEditor(), "modified");
+      const originalNavigationHover = createNavigationHoverActions(
+        diffEditor.getOriginalEditor(),
+      );
+      const modifiedNavigationHover = createNavigationHoverActions(
+        diffEditor.getModifiedEditor(),
+      );
       diffEditor.getOriginalEditor().onDidFocusEditorText(() => {
         lastFocusedSide = "original";
         emitEditorContextChange();
@@ -854,6 +1086,20 @@ export function createReviewEditor(
           diffEditor?.getModifiedEditor().getVisibleRanges?.()?.[0]
             ?.startLineNumber;
         emitEditorContextChange(line);
+      });
+      window.addEventListener("keydown", (event) => {
+        const isPressed = event.metaKey || event.ctrlKey;
+        originalNavigationHover.syncModifierState(isPressed);
+        modifiedNavigationHover.syncModifierState(isPressed);
+      });
+      window.addEventListener("keyup", (event) => {
+        const isPressed = event.metaKey || event.ctrlKey;
+        originalNavigationHover.syncModifierState(isPressed);
+        modifiedNavigationHover.syncModifierState(isPressed);
+      });
+      window.addEventListener("blur", () => {
+        originalNavigationHover.syncModifierState(false);
+        modifiedNavigationHover.syncModifierState(false);
       });
       registerNavigationSupport();
 

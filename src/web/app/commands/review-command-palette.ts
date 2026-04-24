@@ -35,7 +35,7 @@ interface ReviewCommandPaletteOptions {
   openFile: (fileId: string) => void;
   handleShowChangedSymbols: () => Promise<void>;
   handleAgentAction: () => void;
-  navigateUnresolvedComment: (direction: "next" | "previous") => void;
+  navigateSubmittedComment: (direction: "next" | "previous") => void;
 }
 
 export interface ReviewCommandPaletteController {
@@ -67,7 +67,7 @@ export function createReviewCommandPaletteController(
     openFile,
     handleShowChangedSymbols,
     handleAgentAction,
-    navigateUnresolvedComment,
+    navigateSubmittedComment,
   } = options;
 
   function openQuickOpenFiles(): void {
@@ -241,19 +241,19 @@ export function createReviewCommandPaletteController(
           },
         },
         {
-          label: "Review: Next Unresolved Comment",
-          detail: "Jump to the next unresolved comment in this scope",
+          label: "Review: Next Submitted Comment",
+          detail: "Jump to the next submitted comment in this scope",
           hint: "N",
           onSelect: () => {
-            navigateUnresolvedComment("next");
+            navigateSubmittedComment("next");
           },
         },
         {
-          label: "Review: Previous Unresolved Comment",
-          detail: "Jump to the previous unresolved comment in this scope",
+          label: "Review: Previous Submitted Comment",
+          detail: "Jump to the previous submitted comment in this scope",
           hint: "Shift+N",
           onSelect: () => {
-            navigateUnresolvedComment("previous");
+            navigateSubmittedComment("previous");
           },
         },
         {

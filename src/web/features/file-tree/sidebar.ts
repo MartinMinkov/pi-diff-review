@@ -127,7 +127,6 @@ export function createSidebarController(
   function getSubmittedCommentCount(fileId?: string): number {
     return state.comments.filter((comment) => {
       if (comment.status !== "submitted") return false;
-      if (comment.resolved === true) return false;
       if (comment.scope !== state.currentScope) return false;
       if (fileId != null && comment.fileId !== fileId) return false;
       return true;

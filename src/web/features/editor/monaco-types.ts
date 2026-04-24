@@ -22,6 +22,11 @@ export interface MonacoTextModel {
   getValue(): string;
   getLanguageId?(): string;
   getValueInRange(range: MonacoSelection): string;
+  getWordAtPosition?(position: MonacoPosition): {
+    word: string;
+    startColumn: number;
+    endColumn: number;
+  } | null;
   dispose(): void;
 }
 
@@ -31,6 +36,7 @@ export interface MonacoDecoration {
     isWholeLine?: boolean;
     className?: string;
     glyphMarginClassName?: string;
+    inlineClassName?: string;
   };
 }
 
@@ -47,11 +53,18 @@ export interface MonacoMouseTarget {
   type: number;
   position?: {
     lineNumber?: number;
+    column?: number;
   };
 }
 
 export interface MonacoMouseEvent {
   target: MonacoMouseTarget;
+  event?: {
+    browserEvent?: {
+      ctrlKey?: boolean;
+      metaKey?: boolean;
+    };
+  };
 }
 
 export interface MonacoCodeEditor {
@@ -68,6 +81,7 @@ export interface MonacoCodeEditor {
   getPosition?(): MonacoPosition | null;
   getVisibleRanges?(): MonacoVisibleRange[];
   getModel?(): MonacoTextModel | null;
+  getDomNode?(): HTMLElement | null;
   revealLineInCenter(lineNumber: number): void;
   setPosition(position: MonacoPosition): void;
   focus(): void;

@@ -68,7 +68,6 @@ export interface DiffReviewComment {
   status: DiffReviewCommentStatus;
   collapsed: boolean;
   kind?: DiffReviewCommentKind;
-  resolved?: boolean;
   anchorPath?: string;
   anchorText?: string;
 }

@@ -48,9 +48,11 @@ export interface ReviewNavigationResolver {
   buildTargetUri: (
     monacoApi: MonacoUriFactory,
     target: ReviewNavigationTarget,
+    options?: { source?: ReviewNavigationTarget | null },
   ) => unknown;
   parseModelUri: (uri: unknown) => ReviewModelDescriptor | null;
   parseTargetUri: (uri: unknown) => ReviewNavigationTarget | null;
+  parseTargetSourceUri: (uri: unknown) => ReviewNavigationTarget | null;
 }
 
 interface CursorStringMatch {
@@ -114,15 +116,25 @@ export function createReviewNavigationResolver(
   function buildTargetUri(
     monacoApi: MonacoUriFactory,
     target: ReviewNavigationTarget,
+    options: { source?: ReviewNavigationTarget | null } = {},
   ): unknown {
+    const query = new URLSearchParams({
+      scope: target.scope,
+      line: String(target.line),
+      column: String(target.column),
+    });
+    if (options.source) {
+      query.set("sourceFileId", options.source.fileId);
+      query.set("sourceScope", options.source.scope);
+      query.set("sourceSide", options.source.side);
+      query.set("sourceLine", String(options.source.line));
+      query.set("sourceColumn", String(options.source.column));
+    }
+
     return monacoApi.Uri.from({
       scheme: REVIEW_TARGET_SCHEME,
       path: `/${encodeURIComponent(target.fileId)}/${target.side}`,
-      query: new URLSearchParams({
-        scope: target.scope,
-        line: String(target.line),
-        column: String(target.column),
-      }).toString(),
+      query: query.toString(),
     });
   }
 
@@ -169,6 +181,31 @@ export function createReviewNavigationResolver(
 
     return {
       fileId: decodeURIComponent(parts[0]),
+      scope,
+      side,
+      line: Number.isFinite(line) && line > 0 ? line : 1,
+      column: Number.isFinite(column) && column > 0 ? column : 1,
+    };
+  }
+
+  function parseTargetSourceUri(uri: unknown): ReviewNavigationTarget | null {
+    if (!uri || typeof uri !== "object") return null;
+    const value = uri as { scheme?: string; query?: string };
+    if (value.scheme !== REVIEW_TARGET_SCHEME) return null;
+
+    const params = new URLSearchParams(String(value.query || ""));
+    const fileId = params.get("sourceFileId");
+    const scope = params.get("sourceScope");
+    const side = params.get("sourceSide");
+    const line = Number(params.get("sourceLine") || "1");
+    const column = Number(params.get("sourceColumn") || "1");
+
+    if (!fileId || !isReviewScope(scope) || !isNavigationSide(side)) {
+      return null;
+    }
+
+    return {
+      fileId,
       scope,
       side,
       line: Number.isFinite(line) && line > 0 ? line : 1,
@@ -253,6 +290,7 @@ export function createReviewNavigationResolver(
     buildTargetUri,
     parseModelUri,
     parseTargetUri,
+    parseTargetSourceUri,
   };
 }
 

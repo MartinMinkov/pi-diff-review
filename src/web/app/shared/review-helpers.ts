@@ -4,10 +4,6 @@ import type {
   ReviewNavigationTarget,
 } from "../../shared/contracts/review.js";
 
-export function isCommentResolved(comment: DiffReviewComment): boolean {
-  return comment.resolved === true;
-}
-
 export function getCommentKind(
   comment: DiffReviewComment,
 ): DiffReviewCommentKind {
@@ -30,15 +26,13 @@ export function getCommentKindLabel(kind: DiffReviewCommentKind): string {
 }
 
 export function createComment(
-  partial: Omit<DiffReviewComment, "id" | "kind" | "resolved"> & {
+  partial: Omit<DiffReviewComment, "id" | "kind"> & {
     kind?: DiffReviewCommentKind;
-    resolved?: boolean;
   },
 ): DiffReviewComment {
   return {
     id: `${Date.now()}:${Math.random().toString(16).slice(2)}`,
     kind: partial.kind ?? "feedback",
-    resolved: partial.resolved ?? false,
     ...partial,
   };
 }
