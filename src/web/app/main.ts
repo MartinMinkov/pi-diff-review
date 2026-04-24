@@ -32,7 +32,6 @@ import {
   type ReviewFile,
   type ChangeStatus,
   type DiffReviewComment,
-  type DiffReviewCommentKind,
   type ReviewDefinitionDataMessage,
   type ReviewDefinitionErrorMessage,
   type ReviewHostMessage,
@@ -58,8 +57,6 @@ import { getReviewDomElements } from "./ui/dom.js";
 import {
   showPeekModal,
   showReferenceModal,
-  showActionModal,
-  showSymbolModal,
   showTextModal as openTextModal,
 } from "../features/comments/modals.js";
 import { createCommentManager } from "../features/comments/comment-manager.js";
@@ -72,10 +69,7 @@ import {
 import {
   createReviewNavigationResolver,
 } from "../features/navigation/resolver.js";
-import {
-  buildPreviewSnippet,
-  extractReviewSymbols,
-} from "../features/symbols/symbol-context.js";
+import { buildPreviewSnippet } from "../features/symbols/symbol-context.js";
 import { createReviewRuntimeController } from "./runtime/controller.js";
 
 declare global {
@@ -116,11 +110,7 @@ const {
   fileCommentsContainer,
   editorContainerEl,
   changedSymbolsContainerEl,
-  outlineContainerEl,
-  toggleOutlineButton,
   reviewQueueContainerEl,
-  changedSymbolsButton,
-  agentActionButton,
   submitButton,
   cancelButton,
   overallCommentButton,
@@ -968,172 +958,10 @@ function showFileCommentModal() {
   });
 }
 
-async function handleShowChangedSymbols() {
-  changedSymbolsButton.disabled = true;
-  const previousLabel = changedSymbolsButton.textContent || "Changed symbols";
-  changedSymbolsButton.textContent = "Loading…";
-
-  try {
-    const changedFiles = reviewData.files.filter(
-      (file) => file.inGitDiff || file.inLastCommit || file.worktreeStatus != null,
-    );
-    const items = (
-      await Promise.all(
-        changedFiles.map(async (file) => {
-          const contents = await loadFileContents(file.id, "all-files");
-          const content = contents?.modifiedContent ?? contents?.originalContent ?? "";
-          const languageId = inferLanguage(file.path);
-          return extractReviewSymbols(content, languageId).map((symbol) => ({
-            file,
-            symbol,
-          }));
-        }),
-      )
-    )
-      .flat()
-      .sort((left, right) => {
-        if (left.file.path !== right.file.path) {
-          return left.file.path.localeCompare(right.file.path);
-        }
-        return left.symbol.lineNumber - right.symbol.lineNumber;
-      });
-
-    showSymbolModal({
-      title: "Changed symbols",
-      description:
-        "Jump to the meaningful parts of the current local change set.",
-      items: items.map(({ file, symbol }) => ({
-        title: symbol.title,
-        kind: symbol.kind,
-        description: `${file.path} · line ${symbol.lineNumber}`,
-        onSelect: () => {
-          openNavigationTarget({
-            fileId: file.id,
-            scope: file.inGitDiff
-              ? "git-diff"
-              : file.inLastCommit
-                ? "last-commit"
-                : "all-files",
-            side:
-              file.gitDiff?.hasModified || file.lastCommit?.hasModified || file.hasWorkingTreeFile
-                ? "modified"
-                : "original",
-            line: symbol.lineNumber,
-            column: 1,
-          });
-        },
-      })),
-    });
-  } finally {
-    changedSymbolsButton.disabled = false;
-    changedSymbolsButton.textContent = previousLabel;
-  }
-}
-
-function buildAgentActionComment(
-  kind: DiffReviewCommentKind,
-  body: string,
-  selection: ReviewEditorSelectionContext | null,
-  useSelection: boolean,
-): void {
-  const file = activeFile();
-  if (!file) return;
-
-  state.comments.push(
-    createComment({
-      fileId: file.id,
-      scope: state.currentScope,
-      side: useSelection ? selection?.side ?? "modified" : "file",
-      startLine: useSelection ? selection?.startLine ?? null : null,
-      endLine: useSelection ? selection?.endLine ?? null : null,
-      body,
-      status: "submitted",
-      collapsed: false,
-      kind,
-      anchorPath: getScopeDisplayPath(file, state.currentScope),
-      anchorText: useSelection
-        ? selection?.selectedText.trim().split(/\r?\n/)[0]
-        : undefined,
-    }),
-  );
-  updateCommentsUI();
-}
-
-function handleAgentAction() {
-  const selection = getCurrentSelectionContext();
-  const hasSelection = Boolean(selection?.selectedText.trim());
-  const contextDescription = hasSelection
-    ? `Selected lines ${selection?.startLine}-${selection?.endLine}`
-    : activeFile()
-      ? `Current file ${getScopeDisplayPath(activeFile(), state.currentScope)}`
-      : "Current review context";
-
-  showActionModal({
-    title: "Ask agent about this review context",
-    description: `${contextDescription}. These prompts will be added to the review queue and included in the final handoff.`,
-    actions: [
-      {
-        label: "Explain this code",
-        description: "Ask for a plain-language walkthrough of the selected code or current file context.",
-        onSelect: () => {
-          buildAgentActionComment(
-            "explain",
-            hasSelection
-              ? "Explain what this selected code does, which surrounding state or control flow it depends on, and any non-obvious details I should understand before approving it."
-              : "Explain the current file changes in plain language, focusing on the intent and any non-obvious tradeoffs.",
-            selection,
-            hasSelection,
-          );
-        },
-      },
-      {
-        label: "Explain this change",
-        description: "Ask why this change exists and how it fits the broader diff.",
-        onSelect: () => {
-          buildAgentActionComment(
-            "question",
-            hasSelection
-              ? "Explain what changed in this selected code and why this approach was chosen over the most obvious alternatives."
-              : "Summarize what changed in this file and why these edits matter to the overall change set.",
-            selection,
-            hasSelection,
-          );
-        },
-      },
-      {
-        label: "Risk-check",
-        description: "Ask for regressions, edge cases, and failure modes worth reviewing.",
-        onSelect: () => {
-          buildAgentActionComment(
-            "risk",
-            "Review this context for regressions, edge cases, and correctness risks. Call out the most important things I should double-check in the diff.",
-            selection,
-            hasSelection,
-          );
-        },
-      },
-      {
-        label: "Test ideas",
-        description: "Ask which tests matter most before accepting the change.",
-        onSelect: () => {
-          buildAgentActionComment(
-            "tests",
-            "Suggest the most important tests to run or add for this context, and explain what each test would protect against.",
-            selection,
-            hasSelection,
-          );
-        },
-      },
-    ],
-  });
-}
-
 inspectorController = createReviewInspectorController({
   reviewDataFiles: reviewData.files,
   state,
   changedSymbolsContainerEl,
-  outlineContainerEl,
-  toggleOutlineButtonEl: toggleOutlineButton,
   reviewQueueContainerEl,
   activeFile,
   getCurrentNavigationTarget,
@@ -1146,10 +974,6 @@ inspectorController = createReviewInspectorController({
   getCommentKind: (comment) => getCommentKind(comment),
   getCommentKindLabel,
   isCommentAnchorStale,
-});
-
-toggleOutlineButton.addEventListener("click", () => {
-  void inspectorController?.toggleFullOutlineVisibility();
 });
 
 commandPaletteController = createReviewCommandPaletteController({
@@ -1171,8 +995,6 @@ commandPaletteController = createReviewCommandPaletteController({
   writeToClipboard,
   flashSummary,
   openFile,
-  handleShowChangedSymbols,
-  handleAgentAction,
   navigateSubmittedComment,
 });
 
@@ -1459,8 +1281,6 @@ const runtimeController = createReviewRuntimeController({
     hideReviewedCheckboxEl,
     commentedOnlyCheckboxEl,
     changedOnlyCheckboxEl,
-    changedSymbolsButton,
-    agentActionButton,
   },
   events: {
     onSubmit: handleSubmitReview,
@@ -1508,10 +1328,6 @@ const runtimeController = createReviewRuntimeController({
       state.showChangedFilesOnly = checked;
       sidebarController?.renderTree();
     },
-    onShowChangedSymbols: () => {
-      void handleShowChangedSymbols();
-    },
-    onAgentAction: handleAgentAction,
   },
   messages: {
     onFileData: handleHostFileData,
@@ -1552,21 +1368,10 @@ window.addEventListener("keydown", (event) => {
     return;
   }
 
-  if (event.key === "s" && !event.metaKey && !event.ctrlKey && !event.altKey) {
-    event.preventDefault();
-    void handleShowChangedSymbols();
-    return;
-  }
-
   if (event.key.toLowerCase() === "n" && !event.metaKey && !event.ctrlKey && !event.altKey) {
     event.preventDefault();
     navigateSubmittedComment(event.shiftKey ? "previous" : "next");
     return;
-  }
-
-  if (event.key === "e" && !event.metaKey && !event.ctrlKey && !event.altKey) {
-    event.preventDefault();
-    handleAgentAction();
   }
 });
 

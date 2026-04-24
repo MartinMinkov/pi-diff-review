@@ -21,11 +21,7 @@ export interface ReviewDomElements {
   editorContainerEl: HTMLDivElement;
   inspectorEl: HTMLDivElement;
   changedSymbolsContainerEl: HTMLDivElement;
-  outlineContainerEl: HTMLDivElement;
-  toggleOutlineButton: HTMLButtonElement;
   reviewQueueContainerEl: HTMLDivElement;
-  changedSymbolsButton: HTMLButtonElement;
-  agentActionButton: HTMLButtonElement;
   submitButton: HTMLButtonElement;
   cancelButton: HTMLButtonElement;
   overallCommentButton: HTMLButtonElement;
@@ -91,21 +87,9 @@ export function getReviewDomElements(): ReviewDomElements {
     changedSymbolsContainerEl: document.getElementById(
       "changed-symbols-container",
     ) as HTMLDivElement,
-    outlineContainerEl: document.getElementById(
-      "outline-container",
-    ) as HTMLDivElement,
-    toggleOutlineButton: document.getElementById(
-      "toggle-outline-button",
-    ) as HTMLButtonElement,
     reviewQueueContainerEl: document.getElementById(
       "review-queue-container",
     ) as HTMLDivElement,
-    changedSymbolsButton: document.getElementById(
-      "changed-symbols-button",
-    ) as HTMLButtonElement,
-    agentActionButton: document.getElementById(
-      "agent-action-button",
-    ) as HTMLButtonElement,
     submitButton: document.getElementById("submit-button") as HTMLButtonElement,
     cancelButton: document.getElementById("cancel-button") as HTMLButtonElement,
     overallCommentButton: document.getElementById(

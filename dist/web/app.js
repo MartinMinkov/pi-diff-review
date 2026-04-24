@@ -49,11 +49,11 @@
   function scopeHint(scope) {
     switch (scope) {
       case "git-diff":
-        return "Working tree against HEAD. Use gutter clicks for inline comments, Cmd/Ctrl-click for navigation when supported, F to search code, Cmd/Ctrl+P to jump to files, S for changed symbols, E to ask the agent about the current selection, and Cmd/Ctrl+Shift+P for clipboard commands.";
+        return "Working tree against HEAD. Use gutter clicks for inline comments, Cmd/Ctrl-click for navigation when supported, F to search code, Cmd/Ctrl+P to jump to files, and Cmd/Ctrl+Shift+P for clipboard commands.";
       case "last-commit":
-        return "Last commit against its parent. Use gutter clicks for inline comments, Cmd/Ctrl-click for navigation when supported, F to search code, Cmd/Ctrl+P to jump to files, S for changed symbols, E to ask the agent about the current selection, and Cmd/Ctrl+Shift+P for clipboard commands.";
+        return "Last commit against its parent. Use gutter clicks for inline comments, Cmd/Ctrl-click for navigation when supported, F to search code, Cmd/Ctrl+P to jump to files, and Cmd/Ctrl+Shift+P for clipboard commands.";
       default:
-        return "Current working tree snapshot. Use gutter clicks for inline comments, Cmd/Ctrl-click for navigation when supported, F to search code, Cmd/Ctrl+P to jump to files, S for changed symbols, E to ask the agent about the current selection, and Cmd/Ctrl+Shift+P for clipboard commands.";
+        return "Current working tree snapshot. Use gutter clicks for inline comments, Cmd/Ctrl-click for navigation when supported, F to search code, Cmd/Ctrl+P to jump to files, and Cmd/Ctrl+Shift+P for clipboard commands.";
     }
   }
   function statusLabel(status) {
@@ -681,109 +681,6 @@
         close();
     });
   }
-  function showActionModal(options) {
-    const backdrop = document.createElement("div");
-    backdrop.className = "review-modal-backdrop";
-    backdrop.innerHTML = `
-    <div class="review-modal-card">
-      <div class="mb-2 text-base font-semibold text-white">${escapeHtml(options.title)}</div>
-      <div class="mb-4 text-sm text-review-muted">${escapeHtml(options.description)}</div>
-      <div class="space-y-2">
-        ${options.actions.map((action, index) => `
-              <button data-action-index="${index}" class="w-full rounded-md border border-review-border bg-[#010409] px-4 py-3 text-left hover:bg-[#11161d] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500">
-                <div class="text-sm font-medium text-review-text">${escapeHtml(action.label)}</div>
-                <div class="mt-1 text-xs leading-5 text-review-muted">${escapeHtml(action.description)}</div>
-              </button>
-            `).join("")}
-      </div>
-      <div class="mt-4 flex justify-end">
-        <button id="review-modal-close" class="cursor-pointer rounded-md border border-review-border bg-review-panel px-4 py-2 text-sm font-medium text-review-text hover:bg-[#21262d]">Close</button>
-      </div>
-    </div>
-  `;
-    document.body.appendChild(backdrop);
-    const close = () => backdrop.remove();
-    backdrop.querySelector("#review-modal-close")?.addEventListener("click", close);
-    backdrop.querySelectorAll("[data-action-index]").forEach((node) => {
-      node.addEventListener("click", () => {
-        const index = Number(node.getAttribute("data-action-index") || "-1");
-        const action = options.actions[index];
-        if (!action)
-          return;
-        action.onSelect();
-        close();
-      });
-    });
-    backdrop.addEventListener("click", (event) => {
-      if (event.target === backdrop)
-        close();
-    });
-  }
-  function showSymbolModal(options) {
-    const backdrop = document.createElement("div");
-    backdrop.className = "review-modal-backdrop";
-    backdrop.innerHTML = `
-    <div class="review-modal-card">
-      <div class="mb-2 text-base font-semibold text-white">${escapeHtml(options.title)}</div>
-      <div class="mb-4 text-sm text-review-muted">${escapeHtml(options.description)}</div>
-      <input
-        id="review-symbol-search"
-        type="text"
-        spellcheck="false"
-        autocomplete="off"
-        placeholder="Filter symbols"
-        class="mb-3 w-full rounded-md border border-review-border bg-[#010409] px-3 py-2 text-sm text-review-text outline-none placeholder:text-review-muted focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-      />
-      <div id="review-symbol-list" class="scrollbar-thin max-h-[55vh] space-y-2 overflow-auto"></div>
-      <div class="mt-4 flex justify-end">
-        <button id="review-modal-close" class="cursor-pointer rounded-md border border-review-border bg-review-panel px-4 py-2 text-sm font-medium text-review-text hover:bg-[#21262d]">Close</button>
-      </div>
-    </div>
-  `;
-    document.body.appendChild(backdrop);
-    const searchInput = backdrop.querySelector("#review-symbol-search");
-    const listEl = backdrop.querySelector("#review-symbol-list");
-    const close = () => backdrop.remove();
-    function render(query = "") {
-      if (!listEl)
-        return;
-      const normalized = query.trim().toLowerCase();
-      const items = options.items.filter((item) => {
-        if (!normalized)
-          return true;
-        return `${item.title} ${item.description} ${item.kind}`.toLowerCase().includes(normalized);
-      });
-      listEl.innerHTML = items.length > 0 ? items.map((item, index) => `
-                <button data-symbol-index="${index}" class="flex w-full items-center justify-between gap-3 rounded-md border border-review-border bg-[#010409] px-4 py-3 text-left hover:bg-[#11161d]">
-                  <span class="min-w-0">
-                    <span class="block truncate text-sm font-medium text-review-text">${escapeHtml(item.title)}</span>
-                    <span class="mt-1 block truncate text-xs text-review-muted">${escapeHtml(item.description)}</span>
-                  </span>
-                  <span class="shrink-0 rounded-md border border-review-border bg-review-panel px-2 py-0.5 text-[11px] font-medium text-review-muted">${escapeHtml(item.kind)}</span>
-                </button>
-              `).join("") : `<div class="rounded-md border border-review-border bg-[#010409] px-4 py-4 text-sm text-review-muted">No symbols match this filter.</div>`;
-      listEl.querySelectorAll("[data-symbol-index]").forEach((node) => {
-        node.addEventListener("click", () => {
-          const index = Number(node.getAttribute("data-symbol-index") || "-1");
-          const filtered = options.items.filter((item) => {
-            if (!normalized)
-              return true;
-            return `${item.title} ${item.description} ${item.kind}`.toLowerCase().includes(normalized);
-          });
-          filtered[index]?.onSelect();
-          close();
-        });
-      });
-    }
-    backdrop.querySelector("#review-modal-close")?.addEventListener("click", close);
-    searchInput?.addEventListener("input", () => render(searchInput.value));
-    backdrop.addEventListener("click", (event) => {
-      if (event.target === backdrop)
-        close();
-    });
-    render();
-    searchInput?.focus();
-  }
   function showCommandPaletteModal(options) {
     const backdrop = document.createElement("div");
     backdrop.className = "review-modal-backdrop";
@@ -1028,8 +925,6 @@
       writeToClipboard: writeToClipboard2,
       flashSummary,
       openFile,
-      handleShowChangedSymbols,
-      handleAgentAction,
       navigateSubmittedComment
     } = options;
     function openQuickOpenFiles() {
@@ -1168,14 +1063,6 @@ ${snippet}`;
             }
           },
           {
-            label: "Review: Jump to Changed Symbols",
-            detail: "Open the changed-symbol navigator",
-            hint: "S",
-            onSelect: () => {
-              handleShowChangedSymbols();
-            }
-          },
-          {
             label: "Review: Next Submitted Comment",
             detail: "Jump to the next submitted comment in this scope",
             hint: "N",
@@ -1189,14 +1076,6 @@ ${snippet}`;
             hint: "Shift+N",
             onSelect: () => {
               navigateSubmittedComment("previous");
-            }
-          },
-          {
-            label: "Agent: Ask About Selection",
-            detail: selectionText ? "Create a focused review prompt from the current selection" : "Create a focused review prompt from the current file",
-            hint: "E",
-            onSelect: () => {
-              handleAgentAction();
             }
           }
         ]
@@ -1335,8 +1214,6 @@ ${snippet}`;
       reviewDataFiles,
       state,
       changedSymbolsContainerEl,
-      outlineContainerEl,
-      toggleOutlineButtonEl,
       reviewQueueContainerEl,
       activeFile,
       getCurrentNavigationTarget,
@@ -1350,8 +1227,6 @@ ${snippet}`;
       getCommentKindLabel: getCommentKindLabel3,
       isCommentAnchorStale
     } = options;
-    const outlineCache = new Map;
-    let showFullOutline = false;
     function getActiveCommentQueue() {
       return state.comments.filter((comment) => comment.status === "submitted" && comment.scope === state.currentScope).sort((left, right) => {
         if (left.fileId !== right.fileId) {
@@ -1431,24 +1306,13 @@ ${snippet}`;
     async function renderOutline() {
       const file = activeFile();
       const scope = state.currentScope;
-      outlineContainerEl.classList.toggle("hidden", !showFullOutline);
-      toggleOutlineButtonEl.textContent = showFullOutline ? "Hide" : "Show";
       if (!file) {
         changedSymbolsContainerEl.innerHTML = '<div class="rounded-md border border-review-border bg-[#010409] px-3 py-3 text-sm text-review-muted">Select a file to inspect the changed symbols in it.</div>';
-        outlineContainerEl.innerHTML = '<div class="rounded-md border border-review-border bg-[#010409] px-3 py-3 text-sm text-review-muted">Select a file to inspect its symbols.</div>';
         return;
       }
       const contents = await loadFileContents(file.id, scope);
       if (state.activeFileId !== file.id || state.currentScope !== scope) {
         return;
-      }
-      const useModified = scope === "all-files" || getScopeComparison(file, scope)?.hasModified;
-      const content = useModified ? contents?.modifiedContent ?? "" : contents?.originalContent ?? "";
-      const outlineKey = `${scope}:${file.id}:${useModified ? "modified" : "original"}`;
-      const cached = outlineCache.get(outlineKey);
-      const symbols = cached && cached.content === content ? cached.symbols : extractReviewSymbolRanges(content, inferLanguage(getScopeFilePath(file)));
-      if (!cached || cached.content !== content) {
-        outlineCache.set(outlineKey, { content, symbols });
       }
       const current = getCurrentNavigationTarget();
       const preferredSide = scope === "all-files" || getScopeComparison(file, scope)?.hasModified ? "modified" : "original";
@@ -1464,31 +1328,10 @@ ${snippet}`;
         scope,
         current,
         symbols: changedSymbols,
-        emptyLabel: "No changed symbols were detected for this file. Open the full outline if you want the complete file structure.",
+        emptyLabel: "No changed symbols were detected for this file.",
         activeSide: preferredSide,
         openNavigationTarget
       });
-      if (!showFullOutline) {
-        return;
-      }
-      if (symbols.length === 0) {
-        outlineContainerEl.innerHTML = '<div class="rounded-md border border-review-border bg-[#010409] px-3 py-3 text-sm text-review-muted">No outline entries were detected for this file.</div>';
-        return;
-      }
-      renderSymbolList({
-        container: outlineContainerEl,
-        file,
-        scope,
-        current,
-        symbols,
-        emptyLabel: "No outline entries were detected for this file.",
-        activeSide: preferredSide,
-        openNavigationTarget
-      });
-    }
-    async function toggleFullOutlineVisibility() {
-      showFullOutline = !showFullOutline;
-      await renderOutline();
     }
     function getSortedSubmittedComments() {
       const fileOrder = new Map(reviewDataFiles.map((file, index) => [file.id, index]));
@@ -1550,7 +1393,6 @@ ${snippet}`;
     return {
       renderReviewQueue,
       renderOutline,
-      toggleFullOutlineVisibility,
       jumpToComment,
       getSortedSubmittedComments,
       navigateSubmittedComment
@@ -1577,12 +1419,15 @@ ${snippet}`;
       const button = document.createElement("button");
       button.type = "button";
       button.className = active ? "flex w-full items-center justify-between gap-3 rounded-md border border-[#2ea043]/35 bg-[#238636]/12 px-3 py-2 text-left" : "flex w-full items-center justify-between gap-3 rounded-md border border-transparent px-3 py-2 text-left hover:bg-[#161b22]";
+      const title = escapeHtml(symbol.title);
+      const kind = escapeHtml(symbol.kind);
+      const lineNumber = escapeHtml(String(symbol.lineNumber));
       button.innerHTML = `
       <span class="min-w-0">
-        <span class="block truncate text-sm font-medium text-review-text">${symbol.title}</span>
-        <span class="mt-0.5 block text-[11px] text-review-muted">${symbol.kind} · line ${symbol.lineNumber}</span>
+        <span class="block truncate text-sm font-medium text-review-text">${title}</span>
+        <span class="mt-0.5 block text-[11px] text-review-muted">${kind} · line ${lineNumber}</span>
       </span>
-      <span class="text-[11px] text-review-muted">${symbol.lineNumber}</span>
+      <span class="text-[11px] text-review-muted">${lineNumber}</span>
     `;
       button.addEventListener("click", () => {
         openNavigationTarget({
@@ -1878,11 +1723,7 @@ ${snippet}`;
       editorContainerEl: document.getElementById("editor-container"),
       inspectorEl: document.getElementById("inspector"),
       changedSymbolsContainerEl: document.getElementById("changed-symbols-container"),
-      outlineContainerEl: document.getElementById("outline-container"),
-      toggleOutlineButton: document.getElementById("toggle-outline-button"),
       reviewQueueContainerEl: document.getElementById("review-queue-container"),
-      changedSymbolsButton: document.getElementById("changed-symbols-button"),
-      agentActionButton: document.getElementById("agent-action-button"),
       submitButton: document.getElementById("submit-button"),
       cancelButton: document.getElementById("cancel-button"),
       overallCommentButton: document.getElementById("overall-comment-button"),
@@ -3421,9 +3262,7 @@ Target: \`${describeNavigationTarget(target)}\`
         sidebarStatusFilterEl,
         hideReviewedCheckboxEl,
         commentedOnlyCheckboxEl,
-        changedOnlyCheckboxEl,
-        changedSymbolsButton,
-        agentActionButton
+        changedOnlyCheckboxEl
       },
       events: {
         onSubmit,
@@ -3446,9 +3285,7 @@ Target: \`${describeNavigationTarget(target)}\`
         onStatusFilterChange,
         onHideReviewedChange,
         onCommentedOnlyChange,
-        onChangedOnlyChange,
-        onShowChangedSymbols,
-        onAgentAction
+        onChangedOnlyChange
       },
       messages: {
         onFileData,
@@ -3528,8 +3365,6 @@ Target: \`${describeNavigationTarget(target)}\`
       changedOnlyCheckboxEl.addEventListener("change", () => {
         onChangedOnlyChange(changedOnlyCheckboxEl.checked);
       });
-      changedSymbolsButton.addEventListener("click", onShowChangedSymbols);
-      agentActionButton.addEventListener("click", onAgentAction);
       window.__reviewReceive = handleHostMessage;
     }
     return {
@@ -3564,11 +3399,7 @@ Target: \`${describeNavigationTarget(target)}\`
     fileCommentsContainer,
     editorContainerEl,
     changedSymbolsContainerEl,
-    outlineContainerEl,
-    toggleOutlineButton,
     reviewQueueContainerEl,
-    changedSymbolsButton,
-    agentActionButton,
     submitButton,
     cancelButton,
     overallCommentButton,
@@ -4185,113 +4016,10 @@ Target: \`${describeNavigationTarget(target)}\`
       }
     });
   }
-  async function handleShowChangedSymbols() {
-    changedSymbolsButton.disabled = true;
-    const previousLabel = changedSymbolsButton.textContent || "Changed symbols";
-    changedSymbolsButton.textContent = "Loading…";
-    try {
-      const changedFiles = reviewData.files.filter((file) => file.inGitDiff || file.inLastCommit || file.worktreeStatus != null);
-      const items = (await Promise.all(changedFiles.map(async (file) => {
-        const contents = await loadFileContents(file.id, "all-files");
-        const content = contents?.modifiedContent ?? contents?.originalContent ?? "";
-        const languageId = inferLanguage(file.path);
-        return extractReviewSymbols(content, languageId).map((symbol) => ({
-          file,
-          symbol
-        }));
-      }))).flat().sort((left, right) => {
-        if (left.file.path !== right.file.path) {
-          return left.file.path.localeCompare(right.file.path);
-        }
-        return left.symbol.lineNumber - right.symbol.lineNumber;
-      });
-      showSymbolModal({
-        title: "Changed symbols",
-        description: "Jump to the meaningful parts of the current local change set.",
-        items: items.map(({ file, symbol }) => ({
-          title: symbol.title,
-          kind: symbol.kind,
-          description: `${file.path} · line ${symbol.lineNumber}`,
-          onSelect: () => {
-            openNavigationTarget({
-              fileId: file.id,
-              scope: file.inGitDiff ? "git-diff" : file.inLastCommit ? "last-commit" : "all-files",
-              side: file.gitDiff?.hasModified || file.lastCommit?.hasModified || file.hasWorkingTreeFile ? "modified" : "original",
-              line: symbol.lineNumber,
-              column: 1
-            });
-          }
-        }))
-      });
-    } finally {
-      changedSymbolsButton.disabled = false;
-      changedSymbolsButton.textContent = previousLabel;
-    }
-  }
-  function buildAgentActionComment(kind, body, selection, useSelection) {
-    const file = activeFile();
-    if (!file)
-      return;
-    state.comments.push(createComment({
-      fileId: file.id,
-      scope: state.currentScope,
-      side: useSelection ? selection?.side ?? "modified" : "file",
-      startLine: useSelection ? selection?.startLine ?? null : null,
-      endLine: useSelection ? selection?.endLine ?? null : null,
-      body,
-      status: "submitted",
-      collapsed: false,
-      kind,
-      anchorPath: getScopeDisplayPath(file, state.currentScope),
-      anchorText: useSelection ? selection?.selectedText.trim().split(/\r?\n/)[0] : undefined
-    }));
-    updateCommentsUI();
-  }
-  function handleAgentAction() {
-    const selection = getCurrentSelectionContext();
-    const hasSelection = Boolean(selection?.selectedText.trim());
-    const contextDescription = hasSelection ? `Selected lines ${selection?.startLine}-${selection?.endLine}` : activeFile() ? `Current file ${getScopeDisplayPath(activeFile(), state.currentScope)}` : "Current review context";
-    showActionModal({
-      title: "Ask agent about this review context",
-      description: `${contextDescription}. These prompts will be added to the review queue and included in the final handoff.`,
-      actions: [
-        {
-          label: "Explain this code",
-          description: "Ask for a plain-language walkthrough of the selected code or current file context.",
-          onSelect: () => {
-            buildAgentActionComment("explain", hasSelection ? "Explain what this selected code does, which surrounding state or control flow it depends on, and any non-obvious details I should understand before approving it." : "Explain the current file changes in plain language, focusing on the intent and any non-obvious tradeoffs.", selection, hasSelection);
-          }
-        },
-        {
-          label: "Explain this change",
-          description: "Ask why this change exists and how it fits the broader diff.",
-          onSelect: () => {
-            buildAgentActionComment("question", hasSelection ? "Explain what changed in this selected code and why this approach was chosen over the most obvious alternatives." : "Summarize what changed in this file and why these edits matter to the overall change set.", selection, hasSelection);
-          }
-        },
-        {
-          label: "Risk-check",
-          description: "Ask for regressions, edge cases, and failure modes worth reviewing.",
-          onSelect: () => {
-            buildAgentActionComment("risk", "Review this context for regressions, edge cases, and correctness risks. Call out the most important things I should double-check in the diff.", selection, hasSelection);
-          }
-        },
-        {
-          label: "Test ideas",
-          description: "Ask which tests matter most before accepting the change.",
-          onSelect: () => {
-            buildAgentActionComment("tests", "Suggest the most important tests to run or add for this context, and explain what each test would protect against.", selection, hasSelection);
-          }
-        }
-      ]
-    });
-  }
   inspectorController = createReviewInspectorController({
     reviewDataFiles: reviewData.files,
     state,
     changedSymbolsContainerEl,
-    outlineContainerEl,
-    toggleOutlineButtonEl: toggleOutlineButton,
     reviewQueueContainerEl,
     activeFile,
     getCurrentNavigationTarget,
@@ -4304,9 +4032,6 @@ Target: \`${describeNavigationTarget(target)}\`
     getCommentKind: (comment) => getCommentKind(comment),
     getCommentKindLabel,
     isCommentAnchorStale
-  });
-  toggleOutlineButton.addEventListener("click", () => {
-    inspectorController?.toggleFullOutlineVisibility();
   });
   commandPaletteController = createReviewCommandPaletteController({
     state,
@@ -4327,8 +4052,6 @@ Target: \`${describeNavigationTarget(target)}\`
     writeToClipboard,
     flashSummary,
     openFile,
-    handleShowChangedSymbols,
-    handleAgentAction,
     navigateSubmittedComment
   });
   function openQuickOpenFiles() {
@@ -4560,9 +4283,7 @@ Target: \`${describeNavigationTarget(target)}\`
       sidebarStatusFilterEl,
       hideReviewedCheckboxEl,
       commentedOnlyCheckboxEl,
-      changedOnlyCheckboxEl,
-      changedSymbolsButton,
-      agentActionButton
+      changedOnlyCheckboxEl
     },
     events: {
       onSubmit: handleSubmitReview,
@@ -4609,11 +4330,7 @@ Target: \`${describeNavigationTarget(target)}\`
       onChangedOnlyChange: (checked) => {
         state.showChangedFilesOnly = checked;
         sidebarController?.renderTree();
-      },
-      onShowChangedSymbols: () => {
-        handleShowChangedSymbols();
-      },
-      onAgentAction: handleAgentAction
+      }
     },
     messages: {
       onFileData: handleHostFileData,
@@ -4648,19 +4365,10 @@ Target: \`${describeNavigationTarget(target)}\`
       sidebarSearchInputEl.select();
       return;
     }
-    if (event.key === "s" && !event.metaKey && !event.ctrlKey && !event.altKey) {
-      event.preventDefault();
-      handleShowChangedSymbols();
-      return;
-    }
     if (event.key.toLowerCase() === "n" && !event.metaKey && !event.ctrlKey && !event.altKey) {
       event.preventDefault();
       navigateSubmittedComment(event.shiftKey ? "previous" : "next");
       return;
-    }
-    if (event.key === "e" && !event.metaKey && !event.ctrlKey && !event.altKey) {
-      event.preventDefault();
-      handleAgentAction();
     }
   });
   runtimeController.bind();

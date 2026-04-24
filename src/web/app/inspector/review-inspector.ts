@@ -9,7 +9,6 @@ import type {
 import type { ReviewState } from "../../shared/state/review-state.js";
 import {
   extractChangedReviewSymbols,
-  extractReviewSymbolRanges,
   type ReviewSymbolRangeItem,
 } from "../../features/symbols/symbol-context.js";
 import { showCommentEditModal } from "../../features/comments/modals.js";
@@ -18,8 +17,6 @@ interface ReviewInspectorOptions {
   reviewDataFiles: ReviewFile[];
   state: ReviewState;
   changedSymbolsContainerEl: HTMLDivElement;
-  outlineContainerEl: HTMLDivElement;
-  toggleOutlineButtonEl: HTMLButtonElement;
   reviewQueueContainerEl: HTMLDivElement;
   activeFile: () => ReviewFile | null;
   getCurrentNavigationTarget: () => ReviewNavigationTarget | null;
@@ -43,7 +40,6 @@ interface ReviewInspectorOptions {
 export interface ReviewInspectorController {
   renderReviewQueue: () => void;
   renderOutline: () => Promise<void>;
-  toggleFullOutlineVisibility: () => Promise<void>;
   jumpToComment: (comment: DiffReviewComment) => void;
   getSortedSubmittedComments: () => DiffReviewComment[];
   navigateSubmittedComment: (direction: "next" | "previous") => boolean;
@@ -56,8 +52,6 @@ export function createReviewInspectorController(
     reviewDataFiles,
     state,
     changedSymbolsContainerEl,
-    outlineContainerEl,
-    toggleOutlineButtonEl,
     reviewQueueContainerEl,
     activeFile,
     getCurrentNavigationTarget,
@@ -71,12 +65,6 @@ export function createReviewInspectorController(
     getCommentKindLabel,
     isCommentAnchorStale,
   } = options;
-
-  const outlineCache = new Map<
-    string,
-    { content: string; symbols: ReviewSymbolRangeItem[] }
-  >();
-  let showFullOutline = false;
 
   function getActiveCommentQueue(): DiffReviewComment[] {
     return state.comments
@@ -193,34 +181,16 @@ export function createReviewInspectorController(
   async function renderOutline(): Promise<void> {
     const file = activeFile();
     const scope = state.currentScope;
-    outlineContainerEl.classList.toggle("hidden", !showFullOutline);
-    toggleOutlineButtonEl.textContent = showFullOutline ? "Hide" : "Show";
 
     if (!file) {
       changedSymbolsContainerEl.innerHTML =
         '<div class="rounded-md border border-review-border bg-[#010409] px-3 py-3 text-sm text-review-muted">Select a file to inspect the changed symbols in it.</div>';
-      outlineContainerEl.innerHTML =
-        '<div class="rounded-md border border-review-border bg-[#010409] px-3 py-3 text-sm text-review-muted">Select a file to inspect its symbols.</div>';
       return;
     }
 
     const contents = await loadFileContents(file.id, scope);
     if (state.activeFileId !== file.id || state.currentScope !== scope) {
       return;
-    }
-    const useModified =
-      scope === "all-files" || getScopeComparison(file, scope)?.hasModified;
-    const content = useModified
-      ? contents?.modifiedContent ?? ""
-      : contents?.originalContent ?? "";
-    const outlineKey = `${scope}:${file.id}:${useModified ? "modified" : "original"}`;
-    const cached = outlineCache.get(outlineKey);
-    const symbols =
-      cached && cached.content === content
-        ? cached.symbols
-        : extractReviewSymbolRanges(content, inferLanguage(getScopeFilePath(file)));
-    if (!cached || cached.content !== content) {
-      outlineCache.set(outlineKey, { content, symbols });
     }
     const current = getCurrentNavigationTarget();
     const preferredSide =
@@ -240,37 +210,10 @@ export function createReviewInspectorController(
       scope,
       current,
       symbols: changedSymbols,
-      emptyLabel:
-        "No changed symbols were detected for this file. Open the full outline if you want the complete file structure.",
+      emptyLabel: "No changed symbols were detected for this file.",
       activeSide: preferredSide,
       openNavigationTarget,
     });
-
-    if (!showFullOutline) {
-      return;
-    }
-
-    if (symbols.length === 0) {
-      outlineContainerEl.innerHTML =
-        '<div class="rounded-md border border-review-border bg-[#010409] px-3 py-3 text-sm text-review-muted">No outline entries were detected for this file.</div>';
-      return;
-    }
-
-    renderSymbolList({
-      container: outlineContainerEl,
-      file,
-      scope,
-      current,
-      symbols,
-      emptyLabel: "No outline entries were detected for this file.",
-      activeSide: preferredSide,
-      openNavigationTarget,
-    });
-  }
-
-  async function toggleFullOutlineVisibility(): Promise<void> {
-    showFullOutline = !showFullOutline;
-    await renderOutline();
   }
 
   function getSortedSubmittedComments(): DiffReviewComment[] {
@@ -353,7 +296,6 @@ export function createReviewInspectorController(
   return {
     renderReviewQueue,
     renderOutline,
-    toggleFullOutlineVisibility,
     jumpToComment,
     getSortedSubmittedComments,
     navigateSubmittedComment,
@@ -398,12 +340,15 @@ function renderSymbolList(options: {
     button.className = active
       ? "flex w-full items-center justify-between gap-3 rounded-md border border-[#2ea043]/35 bg-[#238636]/12 px-3 py-2 text-left"
       : "flex w-full items-center justify-between gap-3 rounded-md border border-transparent px-3 py-2 text-left hover:bg-[#161b22]";
+    const title = escapeHtml(symbol.title);
+    const kind = escapeHtml(symbol.kind);
+    const lineNumber = escapeHtml(String(symbol.lineNumber));
     button.innerHTML = `
       <span class="min-w-0">
-        <span class="block truncate text-sm font-medium text-review-text">${symbol.title}</span>
-        <span class="mt-0.5 block text-[11px] text-review-muted">${symbol.kind} · line ${symbol.lineNumber}</span>
+        <span class="block truncate text-sm font-medium text-review-text">${title}</span>
+        <span class="mt-0.5 block text-[11px] text-review-muted">${kind} · line ${lineNumber}</span>
       </span>
-      <span class="text-[11px] text-review-muted">${symbol.lineNumber}</span>
+      <span class="text-[11px] text-review-muted">${lineNumber}</span>
     `;
     button.addEventListener("click", () => {
       openNavigationTarget({

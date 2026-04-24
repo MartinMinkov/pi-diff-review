@@ -56,11 +56,11 @@ export function scopeLabel(scope: ReviewScope): string {
 export function scopeHint(scope: ReviewScope): string {
   switch (scope) {
     case "git-diff":
-      return "Working tree against HEAD. Use gutter clicks for inline comments, Cmd/Ctrl-click for navigation when supported, F to search code, Cmd/Ctrl+P to jump to files, S for changed symbols, E to ask the agent about the current selection, and Cmd/Ctrl+Shift+P for clipboard commands.";
+      return "Working tree against HEAD. Use gutter clicks for inline comments, Cmd/Ctrl-click for navigation when supported, F to search code, Cmd/Ctrl+P to jump to files, and Cmd/Ctrl+Shift+P for clipboard commands.";
     case "last-commit":
-      return "Last commit against its parent. Use gutter clicks for inline comments, Cmd/Ctrl-click for navigation when supported, F to search code, Cmd/Ctrl+P to jump to files, S for changed symbols, E to ask the agent about the current selection, and Cmd/Ctrl+Shift+P for clipboard commands.";
+      return "Last commit against its parent. Use gutter clicks for inline comments, Cmd/Ctrl-click for navigation when supported, F to search code, Cmd/Ctrl+P to jump to files, and Cmd/Ctrl+Shift+P for clipboard commands.";
     default:
-      return "Current working tree snapshot. Use gutter clicks for inline comments, Cmd/Ctrl-click for navigation when supported, F to search code, Cmd/Ctrl+P to jump to files, S for changed symbols, E to ask the agent about the current selection, and Cmd/Ctrl+Shift+P for clipboard commands.";
+      return "Current working tree snapshot. Use gutter clicks for inline comments, Cmd/Ctrl-click for navigation when supported, F to search code, Cmd/Ctrl+P to jump to files, and Cmd/Ctrl+Shift+P for clipboard commands.";
   }
 }
 

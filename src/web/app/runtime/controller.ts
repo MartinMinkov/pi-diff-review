@@ -30,8 +30,6 @@ interface ReviewRuntimeDOM {
   hideReviewedCheckboxEl: HTMLInputElement;
   commentedOnlyCheckboxEl: HTMLInputElement;
   changedOnlyCheckboxEl: HTMLInputElement;
-  changedSymbolsButton: HTMLButtonElement;
-  agentActionButton: HTMLButtonElement;
 }
 
 interface ReviewRuntimeEventHandlers {
@@ -56,8 +54,6 @@ interface ReviewRuntimeEventHandlers {
   onHideReviewedChange: (checked: boolean) => void;
   onCommentedOnlyChange: (checked: boolean) => void;
   onChangedOnlyChange: (checked: boolean) => void;
-  onShowChangedSymbols: () => void;
-  onAgentAction: () => void;
 }
 
 interface ReviewRuntimeMessageHandlers {
@@ -112,8 +108,6 @@ export function createReviewRuntimeController(
       hideReviewedCheckboxEl,
       commentedOnlyCheckboxEl,
       changedOnlyCheckboxEl,
-      changedSymbolsButton,
-      agentActionButton,
     },
     events: {
       onSubmit,
@@ -137,8 +131,6 @@ export function createReviewRuntimeController(
       onHideReviewedChange,
       onCommentedOnlyChange,
       onChangedOnlyChange,
-      onShowChangedSymbols,
-      onAgentAction,
     },
     messages: {
       onFileData,
@@ -228,9 +220,6 @@ export function createReviewRuntimeController(
     changedOnlyCheckboxEl.addEventListener("change", () => {
       onChangedOnlyChange(changedOnlyCheckboxEl.checked);
     });
-
-    changedSymbolsButton.addEventListener("click", onShowChangedSymbols);
-    agentActionButton.addEventListener("click", onAgentAction);
 
     window.__reviewReceive = handleHostMessage;
   }

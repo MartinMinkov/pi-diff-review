@@ -400,32 +400,6 @@
           >
             <div class="review-panel-section">
               <div class="review-panel-heading">
-                <div class="review-panel-title">Review tools</div>
-                <div class="flex items-center gap-1">
-                  <span class="review-kbd">S</span>
-                  <span class="review-kbd">E</span>
-                </div>
-              </div>
-              <div class="grid grid-cols-1 gap-2">
-                <button
-                  id="changed-symbols-button"
-                  class="cursor-pointer rounded-md border border-review-border bg-review-panel-2 px-3 py-2 text-left text-sm font-medium text-review-text hover:bg-[#1a212b]"
-                >
-                  Jump through changed symbols
-                </button>
-                <button
-                  id="agent-action-button"
-                  class="cursor-pointer rounded-md border border-review-border bg-review-panel-2 px-3 py-2 text-left text-sm font-medium text-review-text hover:bg-[#1a212b]"
-                >
-                  Ask agent about selection
-                </button>
-              </div>
-              <div class="mt-3 text-[11px] leading-5 text-review-muted">
-                Use the current selection, symbol, or file to create focused review prompts without leaving the diff.
-              </div>
-            </div>
-            <div class="review-panel-section">
-              <div class="review-panel-heading">
                 <div class="review-panel-title">Review queue</div>
               </div>
               <div id="review-queue-container" class="space-y-2"></div>
@@ -439,21 +413,6 @@
                 Focus on the functions, types, and members whose bodies changed in the active file.
               </div>
               <div id="changed-symbols-container" class="space-y-1"></div>
-            </div>
-            <div class="review-panel-section">
-              <div class="review-panel-heading">
-                <div class="review-panel-title">File outline</div>
-                <button
-                  id="toggle-outline-button"
-                  class="cursor-pointer rounded-md border border-review-border bg-review-panel-2 px-2.5 py-1 text-[11px] font-medium text-review-text hover:bg-[#1a212b]"
-                >
-                  Show
-                </button>
-              </div>
-              <div class="mb-3 text-[11px] leading-5 text-review-muted">
-                Use this when you want full file structure, even outside the changed areas.
-              </div>
-              <div id="outline-container" class="hidden space-y-1"></div>
             </div>
           </aside>
         </main>

@@ -33,8 +33,6 @@ interface ReviewCommandPaletteOptions {
   writeToClipboard: (value: string) => Promise<boolean>;
   flashSummary: (message: string) => void;
   openFile: (fileId: string) => void;
-  handleShowChangedSymbols: () => Promise<void>;
-  handleAgentAction: () => void;
   navigateSubmittedComment: (direction: "next" | "previous") => void;
 }
 
@@ -65,8 +63,6 @@ export function createReviewCommandPaletteController(
     writeToClipboard,
     flashSummary,
     openFile,
-    handleShowChangedSymbols,
-    handleAgentAction,
     navigateSubmittedComment,
   } = options;
 
@@ -233,14 +229,6 @@ export function createReviewCommandPaletteController(
           },
         },
         {
-          label: "Review: Jump to Changed Symbols",
-          detail: "Open the changed-symbol navigator",
-          hint: "S",
-          onSelect: () => {
-            void handleShowChangedSymbols();
-          },
-        },
-        {
           label: "Review: Next Submitted Comment",
           detail: "Jump to the next submitted comment in this scope",
           hint: "N",
@@ -254,16 +242,6 @@ export function createReviewCommandPaletteController(
           hint: "Shift+N",
           onSelect: () => {
             navigateSubmittedComment("previous");
-          },
-        },
-        {
-          label: "Agent: Ask About Selection",
-          detail: selectionText
-            ? "Create a focused review prompt from the current selection"
-            : "Create a focused review prompt from the current file",
-          hint: "E",
-          onSelect: () => {
-            handleAgentAction();
           },
         },
       ],
