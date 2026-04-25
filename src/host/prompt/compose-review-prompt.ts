@@ -76,7 +76,14 @@ export function composeReviewPrompt(
   const fileMap = new Map(files.map((file) => [file.id, file]));
   const lines: string[] = [];
 
-  lines.push("Please address the following feedback");
+  lines.push("Please address the following review comments based on their tag:");
+  lines.push("");
+  lines.push(
+    "- [Question] / [Explain]: Respond with an answer or explanation only - do NOT modify code.",
+  );
+  lines.push(
+    "- [Feedback] / [Risk] / [Tests]: Implement the requested changes.",
+  );
   lines.push("");
 
   const overallComment = payload.overallComment.trim();
