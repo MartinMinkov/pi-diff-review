@@ -923,9 +923,11 @@ function showOverallCommentModal() {
     description:
       "This note is prepended to the generated prompt above the inline comments.",
     initialValue: state.overallComment,
+    initialKind: state.overallCommentKind,
     saveLabel: "Save note",
-    onSave: (value) => {
-      state.overallComment = value;
+    onSave: ({ body, kind }) => {
+      state.overallComment = body;
+      state.overallCommentKind = kind;
       sidebarController?.renderTree();
     },
   });
@@ -938,18 +940,20 @@ function showFileCommentModal() {
     title: `File comment for ${getScopeDisplayPath(file, state.currentScope)}`,
     description: `This comment applies to the whole file in ${scopeLabel(state.currentScope).toLowerCase()}.`,
     initialValue: "",
+    initialKind: "feedback",
     saveLabel: "Add comment",
-    onSave: (value) => {
-      if (!value) return;
+    onSave: ({ body, kind }) => {
+      if (!body) return;
       state.comments.push(createComment({
         fileId: file.id,
         scope: state.currentScope,
         side: "file",
         startLine: null,
         endLine: null,
-        body: value,
+        body,
         status: "submitted",
         collapsed: false,
+        kind,
         anchorPath: getScopeDisplayPath(file, state.currentScope),
       }));
       submitButton.disabled = false;
@@ -1093,6 +1097,7 @@ function handleSubmitReview() {
     type: "submit",
     requestId,
     overallComment: state.overallComment.trim(),
+    overallCommentKind: state.overallCommentKind,
     comments: state.comments
       .map((comment) => ({
         ...comment,

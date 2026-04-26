@@ -1,5 +1,6 @@
 import type {
   DiffReviewComment,
+  DiffReviewCommentKind,
   ReviewFile,
   ReviewScope,
   ReviewSubmitPayload,
@@ -54,8 +55,8 @@ function formatLocation(
   return `${scopePrefix}${filePath}:${range}${suffix}`;
 }
 
-function formatCommentKind(comment: DiffReviewComment): string {
-  switch (comment.kind) {
+function formatCommentKind(kind: DiffReviewCommentKind | undefined): string {
+  switch (kind) {
     case "question":
       return "Question";
     case "risk":
@@ -121,14 +122,15 @@ export function composeReviewPrompt(
 
   const overallComment = payload.overallComment.trim();
   if (overallComment.length > 0) {
-    lines.push(overallComment);
+    lines.push(`0. [${formatCommentKind(payload.overallCommentKind)}] [overall]`);
+    lines.push(`   ${overallComment}`);
     lines.push("");
   }
 
   payload.comments.forEach((comment, index) => {
     const file = fileMap.get(comment.fileId);
     lines.push(
-      `${index + 1}. [${formatCommentKind(comment)}] ${formatLocation(comment, file)}`,
+      `${index + 1}. [${formatCommentKind(comment.kind)}] ${formatLocation(comment, file)}`,
     );
     lines.push(`   ${comment.body.trim()}`);
     lines.push("");

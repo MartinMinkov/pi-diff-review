@@ -1,6 +1,7 @@
 import type {
   ChangeStatus,
   DiffReviewComment,
+  DiffReviewCommentKind,
   ReviewFile,
   ReviewFileContents,
   ReviewScope,
@@ -11,6 +12,7 @@ export interface ReviewState {
   currentScope: ReviewScope;
   comments: DiffReviewComment[];
   overallComment: string;
+  overallCommentKind: DiffReviewCommentKind;
   hideUnchanged: boolean;
   wrapLines: boolean;
   collapsedDirs: Record<string, boolean>;
@@ -51,6 +53,7 @@ export function createInitialReviewState(reviewData: {
         : "all-files",
     comments: [],
     overallComment: "",
+    overallCommentKind: "feedback",
     hideUnchanged: false,
     wrapLines: true,
     collapsedDirs: {},

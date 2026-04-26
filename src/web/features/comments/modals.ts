@@ -13,8 +13,9 @@ export interface TextModalOptions {
   title: string;
   description: string;
   initialValue: string;
+  initialKind?: DiffReviewCommentKind;
   saveLabel: string;
-  onSave: (value: string) => void;
+  onSave: (value: { body: string; kind: DiffReviewCommentKind }) => void;
 }
 
 export interface CommentEditModalOptions {
@@ -136,6 +137,15 @@ export function showTextModal(options: TextModalOptions): void {
     <div class="review-modal-card">
       <div class="mb-2 text-base font-semibold text-white">${escapeHtml(options.title)}</div>
       <div class="mb-4 text-sm text-review-muted">${escapeHtml(options.description)}</div>
+      <div class="mb-3">
+        <select id="review-text-kind" class="rounded-md border border-review-border bg-[#010409] px-2 py-1.5 text-xs font-medium text-review-text outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+          <option value="feedback">Feedback</option>
+          <option value="question">Question</option>
+          <option value="risk">Risk</option>
+          <option value="explain">Explain</option>
+          <option value="tests">Tests</option>
+        </select>
+      </div>
       <textarea id="review-modal-text" rows="12" class="scrollbar-thin min-h-[240px] w-full resize-y overflow-auto rounded-md border border-review-border bg-[#010409] px-3 py-2 text-sm text-review-text outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">${escapeHtml(options.initialValue ?? "")}</textarea>
       <div class="mt-4 flex justify-end gap-2">
         <button id="review-modal-cancel" class="cursor-pointer rounded-md border border-review-border bg-review-panel px-4 py-2 text-sm font-medium text-review-text hover:bg-[#21262d]">Cancel</button>
@@ -149,6 +159,9 @@ export function showTextModal(options: TextModalOptions): void {
   const textarea = backdrop.querySelector(
     "#review-modal-text",
   ) as HTMLTextAreaElement | null;
+  const kindSelect = backdrop.querySelector(
+    "#review-text-kind",
+  ) as HTMLSelectElement | null;
   const cancelButton = backdrop.querySelector(
     "#review-modal-cancel",
   ) as HTMLButtonElement | null;
@@ -165,9 +178,16 @@ export function showTextModal(options: TextModalOptions): void {
     setupPasteHandler(textarea);
   }
 
+  if (kindSelect) {
+    kindSelect.value = options.initialKind ?? "feedback";
+  }
+
   if (saveButton && textarea) {
     saveButton.addEventListener("click", () => {
-      options.onSave(textarea.value.trim());
+      options.onSave({
+        body: textarea.value.trim(),
+        kind: (kindSelect?.value as DiffReviewCommentKind | undefined) ?? "feedback",
+      });
       close();
     });
   }

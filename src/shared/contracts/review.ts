@@ -76,6 +76,7 @@ export interface ReviewSubmitPayload {
   type: "submit";
   requestId: string;
   overallComment: string;
+  overallCommentKind: DiffReviewCommentKind;
   comments: DiffReviewComment[];
 }
 
