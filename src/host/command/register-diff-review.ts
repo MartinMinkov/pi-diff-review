@@ -167,11 +167,29 @@ export default function (pi: ExtensionAPI) {
     }
 
     const html = buildReviewHtml({ repoRoot, files, goModules });
-    const window = open(html, {
-      width: 1680,
-      height: 1020,
-      title: "pi review",
-    });
+    const previousGlimpseBackend = process.env.GLIMPSE_BACKEND;
+    const shouldUseChromiumBackend =
+      process.platform === "linux" &&
+      !process.env.WAYLAND_DISPLAY &&
+      process.env.XDG_SESSION_TYPE !== "wayland" &&
+      previousGlimpseBackend == null;
+
+    let window: GlimpseWindow;
+    try {
+      if (shouldUseChromiumBackend) {
+        process.env.GLIMPSE_BACKEND = "chromium";
+      }
+
+      window = open(html, {
+        width: 1680,
+        height: 1020,
+        title: "pi review",
+      });
+    } finally {
+      if (shouldUseChromiumBackend) {
+        delete process.env.GLIMPSE_BACKEND;
+      }
+    }
     activeWindow = window;
 
     const closeReviewWindow = (): void => {

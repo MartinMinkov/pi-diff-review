@@ -15,7 +15,7 @@
   "packageManager": "pnpm@10.18.2",
   "pnpm": {
     "patchedDependencies": {
-      "glimpseui@0.6.0": "patches/glimpseui@0.6.0.patch"
+      "glimpseui@0.6.2": "patches/glimpseui@0.6.2.patch"
     }
   },
   "pi": {
@@ -25,7 +25,7 @@
   },
   "dependencies": {
     "@mariozechner/pi-tui": "^0.69.0",
-    "glimpseui": "^0.6.0",
+    "glimpseui": "0.6.2",
     "typescript": "^5.9.2"
   },
   "peerDependencies": {

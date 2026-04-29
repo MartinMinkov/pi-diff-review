@@ -5,9 +5,9 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
-  glimpseui@0.6.0:
+  glimpseui@0.6.2:
     hash: ad09a46f9aa3c820dac86b352b05888f7ac442566040798d412b111cb393afe2
-    path: patches/glimpseui@0.6.0.patch
+    path: patches/glimpseui@0.6.2.patch
 
 importers:
 
@@ -20,8 +20,8 @@ importers:
         specifier: ^0.69.0
         version: 0.69.0
       glimpseui:
-        specifier: ^0.6.0
-        version: 0.6.0(patch_hash=ad09a46f9aa3c820dac86b352b05888f7ac442566040798d412b111cb393afe2)
+        specifier: 0.6.2
+        version: 0.6.2(patch_hash=ad09a46f9aa3c820dac86b352b05888f7ac442566040798d412b111cb393afe2)
       typescript:
         specifier: ^5.9.2
         version: 5.9.3
@@ -1033,8 +1033,8 @@ packages:
     resolution: {integrity: sha512-b1O07XYq8eRuVzBNgJLstU6FYc1tS6wnMtF1I1D9lE8LxZSOGZ7LhxN54yPP6mGw5f2CkXY2BQUL9Fx41qvcIg==}
     engines: {node: '>= 14'}
 
-  glimpseui@0.6.0:
-    resolution: {integrity: sha512-x2RB18OmIni92C65V2Zn6SVL6rerlM9cfFbwbS8tFDKLBk5wJE5ikp50D6G8Sz/ha7BnnhyJjxFX0Fpf44Xi+A==}
+  glimpseui@0.6.2:
+    resolution: {integrity: sha512-U/pEqum33QuC58PjSvctSiV6HGSIfTR7y2dJv0hSFYzfsIfi40dMy0nwmaB9LOpGprmPW2ybaaFQIEhlIontOA==}
     engines: {node: '>=18'}
     os: [darwin, linux, win32]
     hasBin: true
@@ -2966,7 +2966,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  glimpseui@0.6.0(patch_hash=ad09a46f9aa3c820dac86b352b05888f7ac442566040798d412b111cb393afe2): {}
+  glimpseui@0.6.2(patch_hash=ad09a46f9aa3c820dac86b352b05888f7ac442566040798d412b111cb393afe2): {}
 
   glob-parent@6.0.2:
     dependencies:
