@@ -6,7 +6,7 @@ settings:
 
 patchedDependencies:
   glimpseui@0.6.2:
-    hash: ad09a46f9aa3c820dac86b352b05888f7ac442566040798d412b111cb393afe2
+    hash: 11dbaabf7ec205e8cb670a3df634a89f5ee3efdc1d4da730eb1deb29891e96a0
     path: patches/glimpseui@0.6.2.patch
 
 importers:
@@ -21,7 +21,7 @@ importers:
         version: 0.69.0
       glimpseui:
         specifier: 0.6.2
-        version: 0.6.2(patch_hash=ad09a46f9aa3c820dac86b352b05888f7ac442566040798d412b111cb393afe2)
+        version: 0.6.2(patch_hash=11dbaabf7ec205e8cb670a3df634a89f5ee3efdc1d4da730eb1deb29891e96a0)
       typescript:
         specifier: ^5.9.2
         version: 5.9.3
@@ -2966,7 +2966,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  glimpseui@0.6.2(patch_hash=ad09a46f9aa3c820dac86b352b05888f7ac442566040798d412b111cb393afe2): {}
+  glimpseui@0.6.2(patch_hash=11dbaabf7ec205e8cb670a3df634a89f5ee3efdc1d4da730eb1deb29891e96a0): {}
 
   glob-parent@6.0.2:
     dependencies:

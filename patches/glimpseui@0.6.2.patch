@@ -1,5 +1,19 @@
+diff --git a/src/chromium-backend.mjs b/src/chromium-backend.mjs
+index 3a3f5fd4c190e5c43bf104148923671bbaea5347..4ad859dfaaab33b6fe8a1f505cf4c6401930c5d5 100644
+--- a/src/chromium-backend.mjs
++++ b/src/chromium-backend.mjs
+@@ -560,6 +560,9 @@ async function main() {
+     '--disable-sync',
+     '--disable-translate',
+     '--disable-features=TranslateUI',
++    '--disable-gpu',
++    '--disable-gpu-compositing',
++    '--log-level=3',
+     '--metrics-recording-only',
+     '--no-pings',
+     `--user-data-dir=${profileDir}`,
 diff --git a/src/glimpse.swift b/src/glimpse.swift
-index 825480d..9cff35c 100644
+index 825480d54a09e78da3a73e71ca501e2f34462532..9cff35c9c3e599609d0401623643acc02f0bbdba 100644
 --- a/src/glimpse.swift
 +++ b/src/glimpse.swift
 @@ -238,6 +238,41 @@ window.glimpse = {
