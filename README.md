@@ -46,17 +46,15 @@ Latest features in this fork include:
 The review workspace also includes code-navigation tools:
 
 - Back and forward navigation history inside the review window.
-- Peek definition before jumping.
-- Reference search with filters for changed files and the current review scope.
 - Clickable navigation links for supported symbols, imports, and module paths.
 - Changed-symbol outline for the active file.
 - Current-symbol display in the editor header.
 - Quick-open files with `Cmd/Ctrl+P`.
 - Command palette with `Cmd/Ctrl+Shift+P`.
-- Keyboard shortcuts for focusing code search and moving between submitted
-  comments.
+- Keyboard shortcuts for focusing code search, marking files reviewed, and
+  moving between submitted comments.
 
-Semantic definition and reference lookup is available for:
+Semantic definition lookup is available for:
 
 - Rust, via `rust-analyzer` when it is installed.
 - Go, via `gopls` when it is installed.

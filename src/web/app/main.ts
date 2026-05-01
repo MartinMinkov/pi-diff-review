@@ -1,5 +1,4 @@
 import {
-  inferLanguage,
   scopeHint,
   scopeLabel,
   statusBadgeClass,
@@ -29,7 +28,6 @@ import {
 import { createSidebarController } from "../features/file-tree/sidebar.js";
 import type { ReviewSidebarController } from "../features/file-tree/sidebar.js";
 import {
-  type ReviewFile,
   type ChangeStatus,
   type DiffReviewComment,
   type ReviewDefinitionDataMessage,
@@ -39,10 +37,7 @@ import {
   type ReviewFileDataMessage,
   type ReviewFileErrorMessage,
   type ReviewNavigationRequest,
-  type ReviewNavigationSide,
   type ReviewNavigationTarget,
-  type ReviewReferencesDataMessage,
-  type ReviewReferencesErrorMessage,
   type ReviewScope,
   type ReviewSubmitAckMessage,
   type ReviewWindowData,
@@ -55,8 +50,6 @@ import {
 } from "../shared/state/review-state.js";
 import { getReviewDomElements } from "./ui/dom.js";
 import {
-  showPeekModal,
-  showReferenceModal,
   showTextModal as openTextModal,
 } from "../features/comments/modals.js";
 import { createCommentManager } from "../features/comments/comment-manager.js";
@@ -69,7 +62,6 @@ import {
 import {
   createReviewNavigationResolver,
 } from "../features/navigation/resolver.js";
-import { buildPreviewSnippet } from "../features/symbols/symbol-context.js";
 import { createReviewRuntimeController } from "./runtime/controller.js";
 
 declare global {
@@ -117,8 +109,6 @@ const {
   fileCommentButton,
   navigateBackButton,
   navigateForwardButton,
-  showReferencesButton,
-  peekDefinitionButton,
   toggleReviewedButton,
   toggleUnchangedButton,
   toggleWrapButton,
@@ -145,18 +135,10 @@ const pendingDefinitionWaiters = new Map<
     reject: (reason?: unknown) => void;
   }>
 >();
-const pendingReferencesWaiters = new Map<
-  string,
-  Array<{
-    resolve: (value: ReviewNavigationTarget[]) => void;
-    reject: (reason?: unknown) => void;
-  }>
->();
 type NavigationCheckpoint = ReviewNavigationTarget;
 const navigationBackStack: NavigationCheckpoint[] = [];
 const navigationForwardStack: NavigationCheckpoint[] = [];
 let isHistoryNavigation = false;
-let currentNavigationRequestAvailable = false;
 let summaryFlashTimeout: number | null = null;
 let pendingSubmitRequestId: string | null = null;
 let inspectorController: ReviewInspectorController | null = null;
@@ -345,47 +327,6 @@ function requestDefinitionTarget(
   });
 }
 
-function resolvePendingReferencesWaiters(
-  requestId: string,
-  value: ReviewNavigationTarget[],
-): void {
-  const waiters = pendingReferencesWaiters.get(requestId) ?? [];
-  pendingReferencesWaiters.delete(requestId);
-  waiters.forEach((waiter) => waiter.resolve(value));
-}
-
-function rejectPendingReferencesWaiters(
-  requestId: string,
-  reason: unknown,
-): void {
-  const waiters = pendingReferencesWaiters.get(requestId) ?? [];
-  pendingReferencesWaiters.delete(requestId);
-  waiters.forEach((waiter) => waiter.reject(reason));
-}
-
-function requestReferenceTargets(
-  request: ReviewNavigationRequest,
-): Promise<ReviewNavigationTarget[]> {
-  if (!window.glimpse?.send) {
-    return Promise.resolve([]);
-  }
-
-  const requestId = `references:${Date.now()}:${++requestSequence}`;
-  const payload: ReviewWindowMessage = {
-    type: "request-references",
-    requestId,
-    request,
-  };
-
-  window.glimpse.send(payload);
-
-  return new Promise((resolve, reject) => {
-    const waiters = pendingReferencesWaiters.get(requestId) ?? [];
-    waiters.push({ resolve, reject });
-    pendingReferencesWaiters.set(requestId, waiters);
-  });
-}
-
 function getNavigationErrorMessage(
   languageId: string,
   error: unknown,
@@ -518,8 +459,6 @@ async function renderOutline(): Promise<void> {
 function updateNavigationButtons(): void {
   navigateBackButton.disabled = navigationBackStack.length === 0;
   navigateForwardButton.disabled = navigationForwardStack.length === 0;
-  showReferencesButton.disabled = !currentNavigationRequestAvailable;
-  peekDefinitionButton.disabled = !currentNavigationRequestAvailable;
 }
 
 function updateEditorContextUI(context: {
@@ -528,7 +467,6 @@ function updateEditorContextUI(context: {
   symbolTitle: string | null;
   symbolLine: number | null;
 }): void {
-  currentNavigationRequestAvailable = context.navigationRequest != null;
   currentSymbolLabelEl.textContent = context.symbolTitle
     ? `Symbol: ${context.symbolTitle}${context.symbolLine ? ` · line ${context.symbolLine}` : ""}`
     : "";
@@ -566,216 +504,6 @@ function describeNavigationTarget(target: ReviewNavigationTarget): string {
       ? ""
       : ` in ${scopeLabel(target.scope)}`;
   return `${path}${sideLabel}${scopeText}`;
-}
-
-function getCurrentNavigationRequest() {
-  return editorController?.getCurrentNavigationRequest() ?? null;
-}
-
-function getReferenceSearchTarget(file: ReviewFile): {
-  scope: ReviewScope;
-  side: ReviewNavigationSide;
-} {
-  if (state.currentScope === "git-diff" && file.inGitDiff) {
-    return {
-      scope: "git-diff",
-      side: file.gitDiff?.hasModified ? "modified" : "original",
-    };
-  }
-
-  if (state.currentScope === "last-commit" && file.inLastCommit) {
-    return {
-      scope: "last-commit",
-      side: file.lastCommit?.hasModified ? "modified" : "original",
-    };
-  }
-
-  return {
-    scope: "all-files",
-    side: "modified",
-  };
-}
-
-function sortReferenceTargets(
-  left: ReviewNavigationTarget,
-  right: ReviewNavigationTarget,
-): number {
-  const leftFile =
-    reviewData.files.find((file) => file.id === left.fileId) ?? null;
-  const rightFile =
-    reviewData.files.find((file) => file.id === right.fileId) ?? null;
-  const leftChanged = leftFile?.inGitDiff || leftFile?.inLastCommit ? 1 : 0;
-  const rightChanged = rightFile?.inGitDiff || rightFile?.inLastCommit ? 1 : 0;
-  if (leftChanged !== rightChanged) return rightChanged - leftChanged;
-  const leftScopeMatch = left.scope === state.currentScope ? 1 : 0;
-  const rightScopeMatch = right.scope === state.currentScope ? 1 : 0;
-  if (leftScopeMatch !== rightScopeMatch)
-    return rightScopeMatch - leftScopeMatch;
-  return describeNavigationTarget(left).localeCompare(
-    describeNavigationTarget(right),
-  );
-}
-
-async function handleShowReferences() {
-  const request = getCurrentNavigationRequest();
-  if (!request) {
-    showReferenceModal({
-      title: "References",
-      description: "Select a repo-local symbol, import, or module path first.",
-      items: [],
-      emptyLabel:
-        "No active navigation target is available at the current cursor.",
-    });
-    return;
-  }
-
-  const target = await resolveDefinitionTarget(request);
-  if (!target) {
-    showReferenceModal({
-      title: "References",
-      description: "This selection does not resolve to a repo-local navigation target.",
-      items: [],
-      emptyLabel:
-        "No repo-local references are available for the current selection.",
-    });
-    return;
-  }
-
-  showReferencesButton.disabled = true;
-  const previousLabel = showReferencesButton.textContent || "References";
-  showReferencesButton.textContent = "Searching…";
-
-  try {
-    let matches:
-      | Array<{
-          target: ReviewNavigationTarget;
-          lineNumber: number;
-          column: number;
-          sourcePath: string;
-          lineText: string;
-        }>
-      | [];
-
-    if (supportsSemanticDefinition(request.languageId)) {
-      const semanticTargets =
-        (await requestReferenceTargets(request).catch((error: unknown) => {
-          flashSummary(getNavigationErrorMessage(request.languageId, error));
-          return [];
-        })) ?? [];
-      const semanticItems = await Promise.all(
-        semanticTargets.map(async (target) => {
-          const file = reviewData.files.find((item) => item.id === target.fileId);
-          const contents = await loadFileContents(target.fileId, target.scope);
-          const content =
-            target.side === "original"
-              ? contents?.originalContent ?? ""
-              : contents?.modifiedContent ?? "";
-          const lineText = content.split(/\r?\n/)[target.line - 1] ?? "";
-          return {
-            target,
-            lineNumber: target.line,
-            column: target.column,
-            sourcePath: getScopeDisplayPath(file ?? null, target.scope),
-            lineText,
-          };
-        }),
-      );
-      matches = semanticItems.sort((a, b) => sortReferenceTargets(a.target, b.target));
-    } else {
-      const searchableFiles = reviewData.files.filter(
-        (file) => file.hasWorkingTreeFile,
-      );
-      const loadedFiles = await Promise.all(
-        searchableFiles.map(async (file) => ({
-          file,
-          contents: await loadFileContents(file.id, "all-files"),
-        })),
-      );
-
-      matches = navigationResolver
-        .findReferences(
-          request,
-          loadedFiles
-            .filter((item) => item.contents != null)
-            .map((item) => {
-              const target = getReferenceSearchTarget(item.file);
-              return {
-                fileId: item.file.id,
-                scope: target.scope,
-                side: target.side,
-                sourcePath: item.file.path,
-                languageId: inferLanguage(item.file.path),
-                content: item.contents?.modifiedContent || "",
-              };
-            }),
-        )
-        .sort((a, b) => sortReferenceTargets(a.target, b.target));
-    }
-
-    showReferenceModal({
-      title: `References for ${describeNavigationTarget(target)}`,
-      description:
-        "Use the modal filters to focus on changed files or the current review scope.",
-      emptyLabel:
-        "No repo-local references were found in the current workspace snapshot.",
-      items: matches.map((match) => {
-        const file = reviewData.files.find(
-          (item) => item.id === match.target.fileId,
-        );
-        return {
-          title: `${describeNavigationTarget(match.target)}:${match.lineNumber}`,
-          description: match.sourcePath,
-          preview: match.lineText.trim(),
-          isChanged: Boolean(file?.inGitDiff || file?.inLastCommit),
-          isCurrentScope: match.target.scope === state.currentScope,
-          onSelect: () => {
-            openNavigationTarget({
-              ...match.target,
-              line: match.lineNumber,
-              column: match.column,
-            });
-          },
-        };
-      }),
-    });
-  } finally {
-    showReferencesButton.disabled = false;
-    showReferencesButton.textContent = previousLabel;
-    updateNavigationButtons();
-  }
-}
-
-async function handlePeekDefinition() {
-  const request = getCurrentNavigationRequest();
-  if (!request) return;
-  const target = await resolveDefinitionTarget(request);
-  if (!target) return;
-
-  peekDefinitionButton.disabled = true;
-  const previousLabel = peekDefinitionButton.textContent || "Peek";
-  peekDefinitionButton.textContent = "Loading…";
-
-  try {
-    const contents = await loadFileContents(target.fileId, target.scope);
-    if (!contents) return;
-    const previewContent =
-      target.side === "original"
-        ? contents.originalContent
-        : contents.modifiedContent;
-
-    showPeekModal({
-      title: `Peek ${describeNavigationTarget(target)}`,
-      description: "Preview the target in-place before jumping.",
-      code: buildPreviewSnippet(previewContent, target.line || 1),
-      onOpen: () => {
-        openNavigationTarget(target);
-      },
-    });
-  } finally {
-    peekDefinitionButton.disabled = false;
-    peekDefinitionButton.textContent = previousLabel;
-    updateNavigationButtons();
-  }
 }
 
 function openFile(fileId: string): void {
@@ -999,6 +727,7 @@ commandPaletteController = createReviewCommandPaletteController({
   writeToClipboard,
   flashSummary,
   openFile,
+  toggleReviewed: handleToggleReviewed,
   navigateSubmittedComment,
 });
 
@@ -1124,8 +853,10 @@ function handleCancelReview() {
 function handleToggleReviewed() {
   const file = activeFile();
   if (!file) return;
-  state.reviewedFiles[file.id] = !isFileReviewed(file.id);
+  const nextReviewed = !isFileReviewed(file.id);
+  state.reviewedFiles[file.id] = nextReviewed;
   sidebarController?.renderTree();
+  flashSummary(nextReviewed ? "Marked file reviewed" : "Cleared reviewed mark");
 }
 
 function handleToggleUnchanged() {
@@ -1246,17 +977,6 @@ function handleHostDefinitionError(message: ReviewDefinitionErrorMessage) {
   );
 }
 
-function handleHostReferencesData(message: ReviewReferencesDataMessage) {
-  resolvePendingReferencesWaiters(message.requestId, message.targets ?? []);
-}
-
-function handleHostReferencesError(message: ReviewReferencesErrorMessage) {
-  rejectPendingReferencesWaiters(
-    message.requestId,
-    new Error(message.message || "Unknown references error"),
-  );
-}
-
 function handleHostSubmitAck(message: ReviewSubmitAckMessage) {
   if (message.requestId !== pendingSubmitRequestId) return;
   flashSummary(
@@ -1272,8 +992,6 @@ const runtimeController = createReviewRuntimeController({
     fileCommentButton,
     navigateBackButton,
     navigateForwardButton,
-    showReferencesButton,
-    peekDefinitionButton,
     toggleReviewedButton,
     toggleUnchangedButton,
     toggleWrapButton,
@@ -1294,12 +1012,6 @@ const runtimeController = createReviewRuntimeController({
     onShowFileComment: showFileCommentModal,
     onNavigateBack: handleNavigateBack,
     onNavigateForward: handleNavigateForward,
-    onShowReferences: () => {
-      void handleShowReferences();
-    },
-    onPeekDefinition: () => {
-      void handlePeekDefinition();
-    },
     onToggleReviewed: handleToggleReviewed,
     onToggleUnchanged: handleToggleUnchanged,
     onToggleWrap: handleToggleWrap,
@@ -1339,8 +1051,6 @@ const runtimeController = createReviewRuntimeController({
     onFileError: handleHostFileError,
     onDefinitionData: handleHostDefinitionData,
     onDefinitionError: handleHostDefinitionError,
-    onReferencesData: handleHostReferencesData,
-    onReferencesError: handleHostReferencesError,
     onSubmitAck: handleHostSubmitAck,
   },
 });
@@ -1360,16 +1070,26 @@ window.addEventListener("keydown", (event) => {
 
   if (event.defaultPrevented) return;
   const target = event.target as HTMLElement | null;
+  const isMonacoTarget = target?.closest(".monaco-editor") != null;
   const isTypingTarget =
-    target instanceof HTMLInputElement ||
-    target instanceof HTMLTextAreaElement ||
-    target?.isContentEditable === true;
+    !isMonacoTarget &&
+    (target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement ||
+      target?.isContentEditable === true);
   if (isTypingTarget) return;
 
   if (event.key === "f" && !event.metaKey && !event.ctrlKey && !event.altKey) {
     event.preventDefault();
     sidebarSearchInputEl.focus();
     sidebarSearchInputEl.select();
+    return;
+  }
+
+  if (event.key.toLowerCase() === "r" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+    event.preventDefault();
+    if (!event.repeat) {
+      handleToggleReviewed();
+    }
     return;
   }
 

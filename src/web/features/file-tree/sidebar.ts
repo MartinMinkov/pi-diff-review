@@ -280,7 +280,9 @@ export function createSidebarController(
   function updateToggleButtons() {
     const file = activeFile();
     const reviewed = file ? isFileReviewed(file.id) : false;
-    toggleReviewedButton.textContent = reviewed ? "Reviewed" : "Mark reviewed";
+    toggleReviewedButton.textContent = reviewed
+      ? "Reviewed (R)"
+      : "Mark reviewed (R)";
     toggleReviewedButton.className = reviewed
       ? "cursor-pointer rounded-md border border-[#2ea043]/40 bg-[#238636]/15 px-3 py-1 text-xs font-medium text-[#3fb950] hover:bg-[#238636]/25"
       : "cursor-pointer rounded-md border border-review-border bg-review-panel px-3 py-1 text-xs font-medium text-review-text hover:bg-[#21262d]";

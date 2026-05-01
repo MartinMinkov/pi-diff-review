@@ -33,6 +33,7 @@ interface ReviewCommandPaletteOptions {
   writeToClipboard: (value: string) => Promise<boolean>;
   flashSummary: (message: string) => void;
   openFile: (fileId: string) => void;
+  toggleReviewed: () => void;
   navigateSubmittedComment: (direction: "next" | "previous") => void;
 }
 
@@ -63,6 +64,7 @@ export function createReviewCommandPaletteController(
     writeToClipboard,
     flashSummary,
     openFile,
+    toggleReviewed,
     navigateSubmittedComment,
   } = options;
 
@@ -209,6 +211,16 @@ export function createReviewCommandPaletteController(
               const success = await writeToClipboard(value);
               flashSummary(success ? "Copied symbol name" : "Unable to copy");
             })();
+          },
+        },
+        {
+          label: "File: Toggle Reviewed",
+          detail: file
+            ? getScopeDisplayPath(file, state.currentScope)
+            : "No active file",
+          hint: "R",
+          onSelect: () => {
+            toggleReviewed();
           },
         },
         {

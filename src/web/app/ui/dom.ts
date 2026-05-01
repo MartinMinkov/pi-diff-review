@@ -28,8 +28,6 @@ export interface ReviewDomElements {
   fileCommentButton: HTMLButtonElement;
   navigateBackButton: HTMLButtonElement;
   navigateForwardButton: HTMLButtonElement;
-  showReferencesButton: HTMLButtonElement;
-  peekDefinitionButton: HTMLButtonElement;
   toggleReviewedButton: HTMLButtonElement;
   toggleUnchangedButton: HTMLButtonElement;
   toggleWrapButton: HTMLButtonElement;
@@ -103,12 +101,6 @@ export function getReviewDomElements(): ReviewDomElements {
     ) as HTMLButtonElement,
     navigateForwardButton: document.getElementById(
       "navigate-forward-button",
-    ) as HTMLButtonElement,
-    showReferencesButton: document.getElementById(
-      "show-references-button",
-    ) as HTMLButtonElement,
-    peekDefinitionButton: document.getElementById(
-      "peek-definition-button",
     ) as HTMLButtonElement,
     toggleReviewedButton: document.getElementById(
       "toggle-reviewed-button",

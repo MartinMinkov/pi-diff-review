@@ -4,8 +4,6 @@ import type {
   ReviewFileDataMessage,
   ReviewFileErrorMessage,
   ReviewHostMessage,
-  ReviewReferencesDataMessage,
-  ReviewReferencesErrorMessage,
   ReviewSubmitAckMessage,
 } from "../../shared/contracts/review.js";
 
@@ -16,8 +14,6 @@ interface ReviewRuntimeDOM {
   fileCommentButton: HTMLButtonElement;
   navigateBackButton: HTMLButtonElement;
   navigateForwardButton: HTMLButtonElement;
-  showReferencesButton: HTMLButtonElement;
-  peekDefinitionButton: HTMLButtonElement;
   toggleReviewedButton: HTMLButtonElement;
   toggleUnchangedButton: HTMLButtonElement;
   toggleWrapButton: HTMLButtonElement;
@@ -39,8 +35,6 @@ interface ReviewRuntimeEventHandlers {
   onShowFileComment: () => void;
   onNavigateBack: () => void;
   onNavigateForward: () => void;
-  onShowReferences: () => void;
-  onPeekDefinition: () => void;
   onToggleReviewed: () => void;
   onToggleUnchanged: () => void;
   onToggleWrap: () => void;
@@ -61,8 +55,6 @@ interface ReviewRuntimeMessageHandlers {
   onFileError: (message: ReviewFileErrorMessage) => void;
   onDefinitionData: (message: ReviewDefinitionDataMessage) => void;
   onDefinitionError: (message: ReviewDefinitionErrorMessage) => void;
-  onReferencesData: (message: ReviewReferencesDataMessage) => void;
-  onReferencesError: (message: ReviewReferencesErrorMessage) => void;
   onSubmitAck: (message: ReviewSubmitAckMessage) => void;
 }
 
@@ -94,8 +86,6 @@ export function createReviewRuntimeController(
       fileCommentButton,
       navigateBackButton,
       navigateForwardButton,
-      showReferencesButton,
-      peekDefinitionButton,
       toggleReviewedButton,
       toggleUnchangedButton,
       toggleWrapButton,
@@ -116,8 +106,6 @@ export function createReviewRuntimeController(
       onShowFileComment,
       onNavigateBack,
       onNavigateForward,
-      onShowReferences,
-      onPeekDefinition,
       onToggleReviewed,
       onToggleUnchanged,
       onToggleWrap,
@@ -137,8 +125,6 @@ export function createReviewRuntimeController(
       onFileError,
       onDefinitionData,
       onDefinitionError,
-      onReferencesData,
-      onReferencesError,
       onSubmitAck,
     },
   } = options;
@@ -161,14 +147,6 @@ export function createReviewRuntimeController(
       onDefinitionError(message);
       return;
     }
-    if (message.type === "references-data") {
-      onReferencesData(message);
-      return;
-    }
-    if (message.type === "references-error") {
-      onReferencesError(message);
-      return;
-    }
     if (message.type === "submit-ack") {
       onSubmitAck(message);
     }
@@ -181,8 +159,6 @@ export function createReviewRuntimeController(
     fileCommentButton.addEventListener("click", onShowFileComment);
     navigateBackButton.addEventListener("click", onNavigateBack);
     navigateForwardButton.addEventListener("click", onNavigateForward);
-    showReferencesButton.addEventListener("click", onShowReferences);
-    peekDefinitionButton.addEventListener("click", onPeekDefinition);
 
     toggleUnchangedButton.addEventListener("click", onToggleUnchanged);
     toggleWrapButton.addEventListener("click", onToggleWrap);

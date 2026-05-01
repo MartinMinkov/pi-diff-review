@@ -587,116 +587,6 @@
     });
     textarea?.focus();
   }
-  function showReferenceModal(options) {
-    const backdrop = document.createElement("div");
-    backdrop.className = "review-modal-backdrop";
-    backdrop.innerHTML = `
-    <div class="review-modal-card">
-      <div class="mb-2 text-base font-semibold text-white">${escapeHtml(options.title)}</div>
-      <div class="mb-4 text-sm text-review-muted">${escapeHtml(options.description)}</div>
-      <div class="mb-3 flex flex-wrap items-center gap-2">
-        <button data-filter="changed" class="cursor-pointer rounded-md border border-review-border bg-review-panel px-3 py-1 text-xs font-medium text-review-text hover:bg-[#21262d]">Changed files only</button>
-        <button data-filter="scope" class="cursor-pointer rounded-md border border-review-border bg-review-panel px-3 py-1 text-xs font-medium text-review-text hover:bg-[#21262d]">Current scope only</button>
-      </div>
-      <div id="review-reference-list" class="scrollbar-thin max-h-[55vh] space-y-3 overflow-auto"></div>
-      <div class="mt-4 flex justify-end gap-2">
-        <button id="review-modal-close" class="cursor-pointer rounded-md border border-review-border bg-review-panel px-4 py-2 text-sm font-medium text-review-text hover:bg-[#21262d]">Close</button>
-      </div>
-    </div>
-  `;
-    document.body.appendChild(backdrop);
-    const closeButton = backdrop.querySelector("#review-modal-close");
-    const listEl = backdrop.querySelector("#review-reference-list");
-    const filterButtons = backdrop.querySelectorAll("[data-filter]");
-    const close = () => backdrop.remove();
-    const filters = {
-      changed: false,
-      scope: false
-    };
-    function renderItems() {
-      if (!listEl)
-        return;
-      const filteredItems = options.items.filter((item) => {
-        if (filters.changed && !item.isChanged)
-          return false;
-        if (filters.scope && !item.isCurrentScope)
-          return false;
-        return true;
-      });
-      listEl.innerHTML = filteredItems.length > 0 ? filteredItems.map((item, index) => `
-                <button data-reference-index="${index}" class="w-full rounded-md border border-review-border bg-[#010409] px-4 py-3 text-left hover:bg-[#11161d] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500">
-                  <div class="text-sm font-medium text-review-text">${escapeHtml(item.title)}</div>
-                  <div class="mt-1 text-xs text-review-muted">${escapeHtml(item.description)}</div>
-                  ${item.preview ? `<div class="mt-2 truncate text-xs text-[#8b949e]">${escapeHtml(item.preview)}</div>` : ""}
-                </button>
-              `).join("") : `<div class="rounded-md border border-review-border bg-[#010409] px-4 py-4 text-sm text-review-muted">${escapeHtml(options.emptyLabel ?? "No references found.")}</div>`;
-      listEl.querySelectorAll("[data-reference-index]").forEach((node) => {
-        node.addEventListener("click", () => {
-          const index = Number(node.getAttribute("data-reference-index") || "-1");
-          const filtered = options.items.filter((item2) => {
-            if (filters.changed && !item2.isChanged)
-              return false;
-            if (filters.scope && !item2.isCurrentScope)
-              return false;
-            return true;
-          });
-          const item = filtered[index];
-          if (!item)
-            return;
-          item.onSelect();
-          close();
-        });
-      });
-    }
-    if (closeButton) {
-      closeButton.addEventListener("click", close);
-    }
-    filterButtons.forEach((button) => {
-      button.addEventListener("click", () => {
-        const key = button.getAttribute("data-filter");
-        if (!key)
-          return;
-        filters[key] = !filters[key];
-        button.className = filters[key] ? "cursor-pointer rounded-md border border-[#2ea043]/40 bg-[#238636]/15 px-3 py-1 text-xs font-medium text-[#3fb950] hover:bg-[#238636]/25" : "cursor-pointer rounded-md border border-review-border bg-review-panel px-3 py-1 text-xs font-medium text-review-text hover:bg-[#21262d]";
-        renderItems();
-      });
-    });
-    backdrop.addEventListener("click", (event) => {
-      if (event.target === backdrop) {
-        close();
-      }
-    });
-    renderItems();
-    listEl?.querySelector("[data-reference-index]")?.focus();
-  }
-  function showPeekModal(options) {
-    const backdrop = document.createElement("div");
-    backdrop.className = "review-modal-backdrop";
-    backdrop.innerHTML = `
-    <div class="review-modal-card">
-      <div class="mb-2 text-base font-semibold text-white">${escapeHtml(options.title)}</div>
-      <div class="mb-4 text-sm text-review-muted">${escapeHtml(options.description)}</div>
-      <pre class="scrollbar-thin max-h-[55vh] overflow-auto rounded-md border border-review-border bg-[#010409] px-4 py-3 text-xs text-review-text">${escapeHtml(options.code)}</pre>
-      <div class="mt-4 flex justify-end gap-2">
-        <button id="review-modal-close" class="cursor-pointer rounded-md border border-review-border bg-review-panel px-4 py-2 text-sm font-medium text-review-text hover:bg-[#21262d]">Close</button>
-        <button id="review-modal-open" class="cursor-pointer rounded-md border border-[rgba(240,246,252,0.1)] bg-[#238636] px-4 py-2 text-sm font-medium text-white hover:bg-[#2ea043]">${escapeHtml(options.openLabel ?? "Open definition")}</button>
-      </div>
-    </div>
-  `;
-    document.body.appendChild(backdrop);
-    const closeButton = backdrop.querySelector("#review-modal-close");
-    const openButton = backdrop.querySelector("#review-modal-open");
-    const close = () => backdrop.remove();
-    closeButton?.addEventListener("click", close);
-    openButton?.addEventListener("click", () => {
-      options.onOpen();
-      close();
-    });
-    backdrop.addEventListener("click", (event) => {
-      if (event.target === backdrop)
-        close();
-    });
-  }
   function showCommandPaletteModal(options) {
     const backdrop = document.createElement("div");
     backdrop.className = "review-modal-backdrop";
@@ -941,6 +831,7 @@
       writeToClipboard: writeToClipboard2,
       flashSummary,
       openFile,
+      toggleReviewed,
       navigateSubmittedComment
     } = options;
     function openQuickOpenFiles() {
@@ -1062,6 +953,14 @@ ${snippet}`;
             }
           },
           {
+            label: "File: Toggle Reviewed",
+            detail: file ? getScopeDisplayPath(file, state.currentScope) : "No active file",
+            hint: "R",
+            onSelect: () => {
+              toggleReviewed();
+            }
+          },
+          {
             label: "Review: Focus Code Search",
             detail: "Jump to the sidebar code search input",
             hint: "F",
@@ -1115,20 +1014,6 @@ ${snippet}`;
       }
     }
     return { title: null, lineNumber: null };
-  }
-  function buildPreviewSnippet(content, lineNumber, contextRadius = 3) {
-    const lines = content.split(/\r?\n/);
-    if (lines.length === 0)
-      return "";
-    const targetIndex = Math.min(Math.max(lineNumber - 1, 0), lines.length - 1);
-    const start = Math.max(0, targetIndex - contextRadius);
-    const end = Math.min(lines.length - 1, targetIndex + contextRadius);
-    return lines.slice(start, end + 1).map((line, offset) => {
-      const currentLine = start + offset + 1;
-      const prefix = currentLine === targetIndex + 1 ? ">" : " ";
-      return `${prefix} ${String(currentLine).padStart(4, " ")} ${line}`;
-    }).join(`
-`);
   }
   function extractReviewSymbols(content, languageId) {
     const items = [];
@@ -1631,7 +1516,7 @@ ${snippet}`;
     function updateToggleButtons() {
       const file = activeFile();
       const reviewed = file ? isFileReviewed(file.id) : false;
-      toggleReviewedButton.textContent = reviewed ? "Reviewed" : "Mark reviewed";
+      toggleReviewedButton.textContent = reviewed ? "Reviewed (R)" : "Mark reviewed (R)";
       toggleReviewedButton.className = reviewed ? "cursor-pointer rounded-md border border-[#2ea043]/40 bg-[#238636]/15 px-3 py-1 text-xs font-medium text-[#3fb950] hover:bg-[#238636]/25" : "cursor-pointer rounded-md border border-review-border bg-review-panel px-3 py-1 text-xs font-medium text-review-text hover:bg-[#21262d]";
       toggleWrapButton.textContent = `Wrap lines: ${state.wrapLines ? "on" : "off"}`;
       toggleUnchangedButton.textContent = state.hideUnchanged ? "Show full file" : "Show changed areas only";
@@ -1747,8 +1632,6 @@ ${snippet}`;
       fileCommentButton: document.getElementById("file-comment-button"),
       navigateBackButton: document.getElementById("navigate-back-button"),
       navigateForwardButton: document.getElementById("navigate-forward-button"),
-      showReferencesButton: document.getElementById("show-references-button"),
-      peekDefinitionButton: document.getElementById("peek-definition-button"),
       toggleReviewedButton: document.getElementById("toggle-reviewed-button"),
       toggleUnchangedButton: document.getElementById("toggle-unchanged-button"),
       toggleWrapButton: document.getElementById("toggle-wrap-button")
@@ -3266,8 +3149,6 @@ Target: \`${describeNavigationTarget(target)}\`
         fileCommentButton,
         navigateBackButton,
         navigateForwardButton,
-        showReferencesButton,
-        peekDefinitionButton,
         toggleReviewedButton,
         toggleUnchangedButton,
         toggleWrapButton,
@@ -3288,8 +3169,6 @@ Target: \`${describeNavigationTarget(target)}\`
         onShowFileComment,
         onNavigateBack,
         onNavigateForward,
-        onShowReferences,
-        onPeekDefinition,
         onToggleReviewed,
         onToggleUnchanged,
         onToggleWrap,
@@ -3309,8 +3188,6 @@ Target: \`${describeNavigationTarget(target)}\`
         onFileError,
         onDefinitionData,
         onDefinitionError,
-        onReferencesData,
-        onReferencesError,
         onSubmitAck
       }
     } = options;
@@ -3333,14 +3210,6 @@ Target: \`${describeNavigationTarget(target)}\`
         onDefinitionError(message);
         return;
       }
-      if (message.type === "references-data") {
-        onReferencesData(message);
-        return;
-      }
-      if (message.type === "references-error") {
-        onReferencesError(message);
-        return;
-      }
       if (message.type === "submit-ack") {
         onSubmitAck(message);
       }
@@ -3352,8 +3221,6 @@ Target: \`${describeNavigationTarget(target)}\`
       fileCommentButton.addEventListener("click", onShowFileComment);
       navigateBackButton.addEventListener("click", onNavigateBack);
       navigateForwardButton.addEventListener("click", onNavigateForward);
-      showReferencesButton.addEventListener("click", onShowReferences);
-      peekDefinitionButton.addEventListener("click", onPeekDefinition);
       toggleUnchangedButton.addEventListener("click", onToggleUnchanged);
       toggleWrapButton.addEventListener("click", onToggleWrap);
       toggleReviewedButton.addEventListener("click", onToggleReviewed);
@@ -3423,8 +3290,6 @@ Target: \`${describeNavigationTarget(target)}\`
     fileCommentButton,
     navigateBackButton,
     navigateForwardButton,
-    showReferencesButton,
-    peekDefinitionButton,
     toggleReviewedButton,
     toggleUnchangedButton,
     toggleWrapButton
@@ -3437,11 +3302,9 @@ Target: \`${describeNavigationTarget(target)}\`
   var editorController = null;
   var pendingFileWaiters = new Map;
   var pendingDefinitionWaiters = new Map;
-  var pendingReferencesWaiters = new Map;
   var navigationBackStack = [];
   var navigationForwardStack = [];
   var isHistoryNavigation = false;
-  var currentNavigationRequestAvailable = false;
   var summaryFlashTimeout = null;
   var pendingSubmitRequestId = null;
   var inspectorController = null;
@@ -3586,33 +3449,6 @@ Target: \`${describeNavigationTarget(target)}\`
       pendingDefinitionWaiters.set(requestId, waiters);
     });
   }
-  function resolvePendingReferencesWaiters(requestId, value) {
-    const waiters = pendingReferencesWaiters.get(requestId) ?? [];
-    pendingReferencesWaiters.delete(requestId);
-    waiters.forEach((waiter) => waiter.resolve(value));
-  }
-  function rejectPendingReferencesWaiters(requestId, reason) {
-    const waiters = pendingReferencesWaiters.get(requestId) ?? [];
-    pendingReferencesWaiters.delete(requestId);
-    waiters.forEach((waiter) => waiter.reject(reason));
-  }
-  function requestReferenceTargets(request) {
-    if (!window.glimpse?.send) {
-      return Promise.resolve([]);
-    }
-    const requestId = `references:${Date.now()}:${++requestSequence}`;
-    const payload = {
-      type: "request-references",
-      requestId,
-      request
-    };
-    window.glimpse.send(payload);
-    return new Promise((resolve, reject) => {
-      const waiters = pendingReferencesWaiters.get(requestId) ?? [];
-      waiters.push({ resolve, reject });
-      pendingReferencesWaiters.set(requestId, waiters);
-    });
-  }
   function getNavigationErrorMessage(languageId, error) {
     const detail = error instanceof Error ? error.message.trim() : String(error || "").trim();
     const label = languageId === "rust" ? "Rust navigation unavailable" : languageId === "go" ? "Go navigation unavailable" : "Definition lookup unavailable";
@@ -3688,11 +3524,8 @@ Target: \`${describeNavigationTarget(target)}\`
   function updateNavigationButtons() {
     navigateBackButton.disabled = navigationBackStack.length === 0;
     navigateForwardButton.disabled = navigationForwardStack.length === 0;
-    showReferencesButton.disabled = !currentNavigationRequestAvailable;
-    peekDefinitionButton.disabled = !currentNavigationRequestAvailable;
   }
   function updateEditorContextUI(context) {
-    currentNavigationRequestAvailable = context.navigationRequest != null;
     currentSymbolLabelEl.textContent = context.symbolTitle ? `Symbol: ${context.symbolTitle}${context.symbolLine ? ` · line ${context.symbolLine}` : ""}` : "";
     updateNavigationButtons();
     renderOutline();
@@ -3718,160 +3551,6 @@ Target: \`${describeNavigationTarget(target)}\`
     const sideLabel = target.scope === "all-files" ? "" : target.side === "original" ? " (old)" : " (new)";
     const scopeText = target.scope === state.currentScope ? "" : ` in ${scopeLabel(target.scope)}`;
     return `${path}${sideLabel}${scopeText}`;
-  }
-  function getCurrentNavigationRequest() {
-    return editorController?.getCurrentNavigationRequest() ?? null;
-  }
-  function getReferenceSearchTarget(file) {
-    if (state.currentScope === "git-diff" && file.inGitDiff) {
-      return {
-        scope: "git-diff",
-        side: file.gitDiff?.hasModified ? "modified" : "original"
-      };
-    }
-    if (state.currentScope === "last-commit" && file.inLastCommit) {
-      return {
-        scope: "last-commit",
-        side: file.lastCommit?.hasModified ? "modified" : "original"
-      };
-    }
-    return {
-      scope: "all-files",
-      side: "modified"
-    };
-  }
-  function sortReferenceTargets(left, right) {
-    const leftFile = reviewData.files.find((file) => file.id === left.fileId) ?? null;
-    const rightFile = reviewData.files.find((file) => file.id === right.fileId) ?? null;
-    const leftChanged = leftFile?.inGitDiff || leftFile?.inLastCommit ? 1 : 0;
-    const rightChanged = rightFile?.inGitDiff || rightFile?.inLastCommit ? 1 : 0;
-    if (leftChanged !== rightChanged)
-      return rightChanged - leftChanged;
-    const leftScopeMatch = left.scope === state.currentScope ? 1 : 0;
-    const rightScopeMatch = right.scope === state.currentScope ? 1 : 0;
-    if (leftScopeMatch !== rightScopeMatch)
-      return rightScopeMatch - leftScopeMatch;
-    return describeNavigationTarget(left).localeCompare(describeNavigationTarget(right));
-  }
-  async function handleShowReferences() {
-    const request = getCurrentNavigationRequest();
-    if (!request) {
-      showReferenceModal({
-        title: "References",
-        description: "Select a repo-local symbol, import, or module path first.",
-        items: [],
-        emptyLabel: "No active navigation target is available at the current cursor."
-      });
-      return;
-    }
-    const target = await resolveDefinitionTarget(request);
-    if (!target) {
-      showReferenceModal({
-        title: "References",
-        description: "This selection does not resolve to a repo-local navigation target.",
-        items: [],
-        emptyLabel: "No repo-local references are available for the current selection."
-      });
-      return;
-    }
-    showReferencesButton.disabled = true;
-    const previousLabel = showReferencesButton.textContent || "References";
-    showReferencesButton.textContent = "Searching…";
-    try {
-      let matches;
-      if (supportsSemanticDefinition(request.languageId)) {
-        const semanticTargets = await requestReferenceTargets(request).catch((error) => {
-          flashSummary(getNavigationErrorMessage(request.languageId, error));
-          return [];
-        }) ?? [];
-        const semanticItems = await Promise.all(semanticTargets.map(async (target2) => {
-          const file = reviewData.files.find((item) => item.id === target2.fileId);
-          const contents = await loadFileContents(target2.fileId, target2.scope);
-          const content = target2.side === "original" ? contents?.originalContent ?? "" : contents?.modifiedContent ?? "";
-          const lineText = content.split(/\r?\n/)[target2.line - 1] ?? "";
-          return {
-            target: target2,
-            lineNumber: target2.line,
-            column: target2.column,
-            sourcePath: getScopeDisplayPath(file ?? null, target2.scope),
-            lineText
-          };
-        }));
-        matches = semanticItems.sort((a, b) => sortReferenceTargets(a.target, b.target));
-      } else {
-        const searchableFiles = reviewData.files.filter((file) => file.hasWorkingTreeFile);
-        const loadedFiles = await Promise.all(searchableFiles.map(async (file) => ({
-          file,
-          contents: await loadFileContents(file.id, "all-files")
-        })));
-        matches = navigationResolver.findReferences(request, loadedFiles.filter((item) => item.contents != null).map((item) => {
-          const target2 = getReferenceSearchTarget(item.file);
-          return {
-            fileId: item.file.id,
-            scope: target2.scope,
-            side: target2.side,
-            sourcePath: item.file.path,
-            languageId: inferLanguage(item.file.path),
-            content: item.contents?.modifiedContent || ""
-          };
-        })).sort((a, b) => sortReferenceTargets(a.target, b.target));
-      }
-      showReferenceModal({
-        title: `References for ${describeNavigationTarget(target)}`,
-        description: "Use the modal filters to focus on changed files or the current review scope.",
-        emptyLabel: "No repo-local references were found in the current workspace snapshot.",
-        items: matches.map((match) => {
-          const file = reviewData.files.find((item) => item.id === match.target.fileId);
-          return {
-            title: `${describeNavigationTarget(match.target)}:${match.lineNumber}`,
-            description: match.sourcePath,
-            preview: match.lineText.trim(),
-            isChanged: Boolean(file?.inGitDiff || file?.inLastCommit),
-            isCurrentScope: match.target.scope === state.currentScope,
-            onSelect: () => {
-              openNavigationTarget({
-                ...match.target,
-                line: match.lineNumber,
-                column: match.column
-              });
-            }
-          };
-        })
-      });
-    } finally {
-      showReferencesButton.disabled = false;
-      showReferencesButton.textContent = previousLabel;
-      updateNavigationButtons();
-    }
-  }
-  async function handlePeekDefinition() {
-    const request = getCurrentNavigationRequest();
-    if (!request)
-      return;
-    const target = await resolveDefinitionTarget(request);
-    if (!target)
-      return;
-    peekDefinitionButton.disabled = true;
-    const previousLabel = peekDefinitionButton.textContent || "Peek";
-    peekDefinitionButton.textContent = "Loading…";
-    try {
-      const contents = await loadFileContents(target.fileId, target.scope);
-      if (!contents)
-        return;
-      const previewContent = target.side === "original" ? contents.originalContent : contents.modifiedContent;
-      showPeekModal({
-        title: `Peek ${describeNavigationTarget(target)}`,
-        description: "Preview the target in-place before jumping.",
-        code: buildPreviewSnippet(previewContent, target.line || 1),
-        onOpen: () => {
-          openNavigationTarget(target);
-        }
-      });
-    } finally {
-      peekDefinitionButton.disabled = false;
-      peekDefinitionButton.textContent = previousLabel;
-      updateNavigationButtons();
-    }
   }
   function openFile(fileId) {
     if (state.activeFileId === fileId) {
@@ -4073,6 +3752,7 @@ Target: \`${describeNavigationTarget(target)}\`
     writeToClipboard,
     flashSummary,
     openFile,
+    toggleReviewed: handleToggleReviewed,
     navigateSubmittedComment
   });
   function openQuickOpenFiles() {
@@ -4181,8 +3861,10 @@ Target: \`${describeNavigationTarget(target)}\`
     const file = activeFile();
     if (!file)
       return;
-    state.reviewedFiles[file.id] = !isFileReviewed(file.id);
+    const nextReviewed = !isFileReviewed(file.id);
+    state.reviewedFiles[file.id] = nextReviewed;
     sidebarController?.renderTree();
+    flashSummary(nextReviewed ? "Marked file reviewed" : "Cleared reviewed mark");
   }
   function handleToggleUnchanged() {
     state.hideUnchanged = !state.hideUnchanged;
@@ -4273,12 +3955,6 @@ Target: \`${describeNavigationTarget(target)}\`
   function handleHostDefinitionError(message) {
     rejectPendingDefinitionWaiters(message.requestId, new Error(message.message || "Unknown navigation error"));
   }
-  function handleHostReferencesData(message) {
-    resolvePendingReferencesWaiters(message.requestId, message.targets ?? []);
-  }
-  function handleHostReferencesError(message) {
-    rejectPendingReferencesWaiters(message.requestId, new Error(message.message || "Unknown references error"));
-  }
   function handleHostSubmitAck(message) {
     if (message.requestId !== pendingSubmitRequestId)
       return;
@@ -4292,8 +3968,6 @@ Target: \`${describeNavigationTarget(target)}\`
       fileCommentButton,
       navigateBackButton,
       navigateForwardButton,
-      showReferencesButton,
-      peekDefinitionButton,
       toggleReviewedButton,
       toggleUnchangedButton,
       toggleWrapButton,
@@ -4314,12 +3988,6 @@ Target: \`${describeNavigationTarget(target)}\`
       onShowFileComment: showFileCommentModal,
       onNavigateBack: handleNavigateBack,
       onNavigateForward: handleNavigateForward,
-      onShowReferences: () => {
-        handleShowReferences();
-      },
-      onPeekDefinition: () => {
-        handlePeekDefinition();
-      },
       onToggleReviewed: handleToggleReviewed,
       onToggleUnchanged: handleToggleUnchanged,
       onToggleWrap: handleToggleWrap,
@@ -4359,8 +4027,6 @@ Target: \`${describeNavigationTarget(target)}\`
       onFileError: handleHostFileError,
       onDefinitionData: handleHostDefinitionData,
       onDefinitionError: handleHostDefinitionError,
-      onReferencesData: handleHostReferencesData,
-      onReferencesError: handleHostReferencesError,
       onSubmitAck: handleHostSubmitAck
     }
   });
@@ -4378,13 +4044,21 @@ Target: \`${describeNavigationTarget(target)}\`
     if (event.defaultPrevented)
       return;
     const target = event.target;
-    const isTypingTarget = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target?.isContentEditable === true;
+    const isMonacoTarget = target?.closest(".monaco-editor") != null;
+    const isTypingTarget = !isMonacoTarget && (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target?.isContentEditable === true);
     if (isTypingTarget)
       return;
     if (event.key === "f" && !event.metaKey && !event.ctrlKey && !event.altKey) {
       event.preventDefault();
       sidebarSearchInputEl.focus();
       sidebarSearchInputEl.select();
+      return;
+    }
+    if (event.key.toLowerCase() === "r" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      event.preventDefault();
+      if (!event.repeat) {
+        handleToggleReviewed();
+      }
       return;
     }
     if (event.key.toLowerCase() === "n" && !event.metaKey && !event.ctrlKey && !event.altKey) {
