@@ -115,15 +115,8 @@ export default function registerResponseReview(pi: ExtensionAPI): void {
     },
   });
 
-  pi.registerCommand("head", {
-    description: "Alias for /response-review",
-    handler: async (_args, ctx) => {
-      await openResponseReview(ctx);
-    },
-  });
-
   pi.registerShortcut("alt+shift+h", {
-    description: "Open response review for assistant responses",
+    description: "Open /response-review for assistant responses",
     handler: async (ctx) => {
       await openResponseReview(ctx);
     },

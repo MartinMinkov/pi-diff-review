@@ -21,7 +21,7 @@ pi install git:https://github.com/MartinMinkov/pi-workbench
   From there you can review a working tree diff, the last commit, or the full
   repository snapshot without loading every file up front.
 - `/response-review` opens a native response review workspace for the current Pi
-  session. `/head` is an alias for this workflow.
+  session.
 
 Latest diff-review features include:
 
@@ -83,7 +83,7 @@ old/new side context so pi can apply the feedback with useful location metadata.
 
 ### Response review
 
-1. Run `/response-review` or `/head` in pi after one or more assistant responses.
+1. Run `/response-review` in pi after one or more assistant responses.
 2. Pick an assistant response from the sidebar.
 3. Navigate headings/code blocks from the outline.
 4. Select text or use a code-block comment button to add anchored feedback.
