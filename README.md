@@ -86,7 +86,7 @@ old/new side context so pi can apply the feedback with useful location metadata.
 1. Run `/response-review` in pi after one or more assistant responses.
 2. Pick an assistant response from the sidebar.
 3. Navigate headings/code blocks from the outline.
-4. Select text or use a code-block comment button to add anchored feedback.
+4. Select text and press `C` or use the comment button to add anchored feedback.
 5. Add optional overall feedback and a draft/next prompt.
 6. Finish the review to insert a structured follow-up prompt into pi.
 

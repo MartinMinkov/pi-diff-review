@@ -138,17 +138,21 @@
     });
     responseListEl.innerHTML = "";
     if (filtered.length === 0) {
-      responseListEl.innerHTML = `<div class="empty">No matching responses.</div>`;
+      responseListEl.innerHTML = `<div class="text-xs leading-5 text-review-muted">No matching responses.</div>`;
       return;
     }
     for (const response of filtered) {
       const button = document.createElement("button");
-      button.className = `response-item${response.id === activeResponseId ? " active" : ""}`;
+      button.className = [
+        "rounded-xl border bg-review-panel-2 p-2.5 text-left text-review-text",
+        "hover:border-review-accent/60 hover:bg-[#18212c]",
+        response.id === activeResponseId ? "border-review-accent shadow-[inset_3px_0_0_#58a6ff]" : "border-review-border"
+      ].join(" ");
       const count = comments.filter((comment) => comment.responseId === response.id).length;
       button.innerHTML = `
-      <div class="response-item-title">${escapeHtml(response.title)}</div>
-      <div class="response-item-preview">${escapeHtml(response.preview)}</div>
-      ${count > 0 ? `<div class="response-item-preview">${count} comment${count === 1 ? "" : "s"}</div>` : ""}
+      <div class="mb-1 text-xs font-bold text-white">${escapeHtml(response.title)}</div>
+      <div class="text-[11px] leading-5 text-review-muted">${escapeHtml(response.preview)}</div>
+      ${count > 0 ? `<div class="text-[11px] leading-5 text-review-muted">${count} comment${count === 1 ? "" : "s"}</div>` : ""}
     `;
       button.addEventListener("click", () => {
         activeResponseId = response.id;
@@ -176,12 +180,12 @@
   function renderOutline(outline) {
     outlineListEl.innerHTML = "";
     if (outline.length === 0) {
-      outlineListEl.innerHTML = `<div class="empty">No headings or code blocks found.</div>`;
+      outlineListEl.innerHTML = `<div class="text-xs leading-5 text-review-muted">No headings or code blocks found.</div>`;
       return;
     }
     for (const item of outline) {
       const button = document.createElement("button");
-      button.className = "outline-item";
+      button.className = "rounded-md border-0 bg-transparent px-1 py-1 text-left text-xs font-medium text-review-muted hover:bg-review-accent/10 hover:text-review-accent";
       button.textContent = `${item.kind === "code" ? "▣" : "#"} ${item.label}`;
       button.addEventListener("click", () => {
         document.getElementById(item.id)?.scrollIntoView({ block: "start", behavior: "smooth" });
@@ -203,25 +207,25 @@
   function renderComments() {
     commentListEl.innerHTML = "";
     if (comments.length === 0) {
-      commentListEl.innerHTML = `<div class="empty">No comments yet. Select text in the response and click “Comment selection”.</div>`;
+      commentListEl.innerHTML = `<div class="text-xs leading-5 text-review-muted">No comments yet. Select text in the response and press C.</div>`;
       return;
     }
     for (const comment of comments) {
       const response = responses.find((item) => item.id === comment.responseId);
       const card = document.createElement("div");
-      card.className = "comment-card";
+      card.className = "mb-2.5 rounded-xl border border-review-border bg-review-panel-2 p-2.5";
       card.innerHTML = `
-      <div class="comment-card-header">
-        <div class="kind">${escapeHtml(comment.kind)}</div>
-        <div class="small-actions">
-          <button data-action="jump">Jump</button>
-          <button data-action="edit">Edit</button>
-          <button data-action="delete" class="danger">Delete</button>
+      <div class="mb-2 flex items-center justify-between gap-2">
+        <div class="text-[11px] font-extrabold uppercase text-review-accent">${escapeHtml(comment.kind)}</div>
+        <div class="flex gap-1.5">
+          <button data-action="jump" class="rounded-md border border-review-border bg-review-panel-2 px-2 py-1 text-[11px] text-review-text hover:border-review-accent/60">Jump</button>
+          <button data-action="edit" class="rounded-md border border-review-border bg-review-panel-2 px-2 py-1 text-[11px] text-review-text hover:border-review-accent/60">Edit</button>
+          <button data-action="delete" class="rounded-md border border-review-border bg-review-panel-2 px-2 py-1 text-[11px] text-review-text hover:border-red-500/50 hover:bg-red-500/10 hover:text-red-300">Delete</button>
         </div>
       </div>
-      <div class="empty">${escapeHtml(response?.title ?? comment.responseId)}</div>
-      <div class="excerpt">${escapeHtml(shortText(comment.selectedText, 500))}</div>
-      <div class="comment-text">${escapeHtml(comment.comment)}</div>
+      <div class="text-xs leading-5 text-review-muted">${escapeHtml(response?.title ?? comment.responseId)}</div>
+      <div class="my-2 max-h-[82px] overflow-hidden whitespace-pre-wrap border-l-2 border-review-border pl-2 text-[11px] text-review-muted">${escapeHtml(shortText(comment.selectedText, 500))}</div>
+      <div class="whitespace-pre-wrap text-[13px] leading-5 text-review-text">${escapeHtml(comment.comment)}</div>
     `;
       card.querySelector("[data-action='jump']")?.addEventListener("click", () => jumpToComment(comment));
       card.querySelector("[data-action='edit']")?.addEventListener("click", () => editComment(comment));
@@ -250,6 +254,19 @@
     const startOffset = preRange.toString().length;
     const endOffset = startOffset + selection.toString().length;
     return { text, startOffset, endOffset };
+  }
+  function isEditableTarget(target) {
+    if (!(target instanceof HTMLElement))
+      return false;
+    return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || target.isContentEditable;
+  }
+  function commentCurrentSelection() {
+    const selection = getSelectionInResponse();
+    if (!selection) {
+      flash("Select text in the response first.");
+      return;
+    }
+    openCommentModal(selection);
   }
   function openCommentModal(selection) {
     pendingSelection = selection;
@@ -373,14 +390,7 @@
     responseFilter = responseSearchEl.value;
     renderResponses();
   });
-  commentSelectionButton.addEventListener("click", () => {
-    const selection = getSelectionInResponse();
-    if (!selection) {
-      flash("Select text in the response first.");
-      return;
-    }
-    openCommentModal(selection);
-  });
+  commentSelectionButton.addEventListener("click", commentCurrentSelection);
   copySelectionButton.addEventListener("click", () => {
     (async () => {
       const selection = getSelectionInResponse();
@@ -403,9 +413,19 @@
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && modalEl.classList.contains("open")) {
       closeModal();
+      return;
     }
     if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
       submit();
+      return;
+    }
+    const wantsCommentShortcut = event.key.toLowerCase() === "c" && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey;
+    if (wantsCommentShortcut && !modalEl.classList.contains("open") && !isEditableTarget(event.target)) {
+      const selection = getSelectionInResponse();
+      if (!selection)
+        return;
+      event.preventDefault();
+      openCommentModal(selection);
     }
   });
   renderAll();
