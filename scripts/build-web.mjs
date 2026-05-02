@@ -17,6 +17,11 @@ const webApps = [
     sourceDir: join(rootDir, "src", "features", "response-review", "web"),
     distDir: join(rootDir, "dist", "web", "response-review"),
   },
+  {
+    name: "btw",
+    sourceDir: join(rootDir, "src", "features", "btw", "web"),
+    distDir: join(rootDir, "dist", "web", "btw"),
+  },
 ];
 
 for (const app of webApps) {

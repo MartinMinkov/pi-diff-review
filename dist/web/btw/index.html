@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en" class="h-full bg-[#0d1117]">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>pi BTW</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style type="text/tailwindcss">
+      @theme {
+        --color-review-bg: #0d1117;
+        --color-review-panel: #161b22;
+        --color-review-panel-2: #11161d;
+        --color-review-border: #30363d;
+        --color-review-text: #c9d1d9;
+        --color-review-muted: #8b949e;
+        --color-review-accent: #58a6ff;
+      }
+    </style>
+    <style>
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+      }
+
+      .scrollbar-thin::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+      }
+
+      .scrollbar-thin::-webkit-scrollbar-thumb {
+        background: #30363d;
+        border-radius: 999px;
+        border: 3px solid #161b22;
+      }
+
+      .scrollbar-thin::-webkit-scrollbar-track {
+        background: transparent;
+      }
+    </style>
+  </head>
+  <body class="h-full overflow-hidden bg-review-bg text-review-text antialiased">
+    <div class="flex h-full min-h-0 flex-col">
+      <header class="flex items-center justify-between gap-4 border-b border-review-border bg-[#0b1016]/95 px-4 py-3">
+        <div class="min-w-0">
+          <div id="title" class="text-[15px] font-bold text-white">BTW</div>
+          <div id="subtitle" class="mt-0.5 truncate text-[11px] text-review-muted">
+            Parallel side conversation workspace
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="new-button" class="rounded-lg border border-review-border bg-review-panel-2 px-3 py-1.5 text-xs font-semibold hover:border-review-accent/60">New</button>
+          <button id="tangent-button" class="rounded-lg border border-review-border bg-review-panel-2 px-3 py-1.5 text-xs font-semibold hover:border-review-accent/60">Tangent</button>
+          <button id="inject-button" class="rounded-lg border border-review-border bg-review-panel-2 px-3 py-1.5 text-xs font-semibold hover:border-review-accent/60">Inject</button>
+          <button id="summarize-button" class="rounded-lg border border-review-border bg-review-panel-2 px-3 py-1.5 text-xs font-semibold hover:border-review-accent/60">Summarize</button>
+          <button id="clear-button" class="rounded-lg border border-review-border bg-review-panel-2 px-3 py-1.5 text-xs font-semibold hover:border-red-500/50 hover:bg-red-500/10 hover:text-red-300">Clear</button>
+          <button id="close-button" class="rounded-lg border border-review-border bg-review-panel-2 px-3 py-1.5 text-xs font-semibold hover:border-red-500/50 hover:bg-red-500/10 hover:text-red-300">Close</button>
+        </div>
+      </header>
+
+      <main class="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_320px]">
+        <section class="flex min-h-0 min-w-0 flex-col bg-review-bg">
+          <div id="transcript" class="scrollbar-thin min-h-0 flex-1 overflow-auto px-[min(5vw,56px)] py-6"></div>
+          <div class="border-t border-review-border bg-[#0b1016]/95 p-4">
+            <div id="status" class="mb-2 min-h-5 text-xs text-review-accent"></div>
+            <div class="flex gap-2">
+              <textarea id="composer" class="min-h-[72px] flex-1 resize-y rounded-lg border border-review-border bg-[#0d1117] px-3 py-2 text-sm leading-6 text-review-text outline-none focus:border-review-accent" placeholder="Ask a side question… Enter submits, Shift+Enter newline" autofocus></textarea>
+              <button id="send-button" class="self-end rounded-lg border border-white/10 bg-[#238636] px-4 py-2 text-sm font-semibold text-white hover:bg-[#2ea043]">Send</button>
+            </div>
+            <div class="mt-2 text-[11px] text-review-muted">Enter submit · Shift+Enter newline · Esc close · /btw:new, /btw:tangent, /btw:inject, /btw:summarize supported</div>
+          </div>
+        </section>
+
+        <aside class="scrollbar-thin min-h-0 overflow-auto border-l border-review-border bg-review-bg/90">
+          <div class="border-b border-review-border p-3.5">
+            <div class="mb-2.5 text-[11px] font-extrabold uppercase tracking-wide text-review-muted">Thread</div>
+            <div id="thread-summary" class="text-sm text-review-text"></div>
+          </div>
+          <div class="border-b border-review-border p-3.5">
+            <div class="mb-2.5 text-[11px] font-extrabold uppercase tracking-wide text-review-muted">Model override</div>
+            <input id="model-input" class="mb-2 w-full rounded-lg border border-review-border bg-[#0b1016] px-2.5 py-2 text-xs text-review-text outline-none focus:border-review-accent" placeholder="provider model api" />
+            <div class="flex gap-2">
+              <button id="model-set-button" class="rounded-lg border border-review-border bg-review-panel-2 px-2.5 py-1.5 text-xs font-semibold hover:border-review-accent/60">Set</button>
+              <button id="model-clear-button" class="rounded-lg border border-review-border bg-review-panel-2 px-2.5 py-1.5 text-xs font-semibold hover:border-review-accent/60">Clear</button>
+            </div>
+          </div>
+          <div class="border-b border-review-border p-3.5">
+            <div class="mb-2.5 text-[11px] font-extrabold uppercase tracking-wide text-review-muted">Thinking override</div>
+            <input id="thinking-input" class="mb-2 w-full rounded-lg border border-review-border bg-[#0b1016] px-2.5 py-2 text-xs text-review-text outline-none focus:border-review-accent" placeholder="off | low | medium | high" />
+            <div class="flex gap-2">
+              <button id="thinking-set-button" class="rounded-lg border border-review-border bg-review-panel-2 px-2.5 py-1.5 text-xs font-semibold hover:border-review-accent/60">Set</button>
+              <button id="thinking-clear-button" class="rounded-lg border border-review-border bg-review-panel-2 px-2.5 py-1.5 text-xs font-semibold hover:border-review-accent/60">Clear</button>
+            </div>
+          </div>
+          <div class="p-3.5 text-xs leading-5 text-review-muted">
+            BTW runs as a separate Pi sub-session. Contextual threads inherit current main-session context; tangent threads start contextless.
+          </div>
+        </aside>
+      </main>
+    </div>
+
+    <script id="btw-data" type="application/json">__INLINE_DATA__</script>
+    <script>__INLINE_JS__;</script>
+  </body>
+</html>

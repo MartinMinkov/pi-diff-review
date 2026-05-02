@@ -21,6 +21,9 @@
   "pi": {
     "extensions": [
       "./src/extension.ts"
+    ],
+    "skills": [
+      "./skills"
     ]
   },
   "dependencies": {
@@ -29,6 +32,7 @@
     "typescript": "^5.9.2"
   },
   "peerDependencies": {
+    "@mariozechner/pi-ai": "*",
     "@mariozechner/pi-coding-agent": "*"
   },
   "devDependencies": {

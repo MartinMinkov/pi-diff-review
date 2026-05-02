@@ -15,13 +15,15 @@ pi install git:https://github.com/MartinMinkov/pi-workbench
 
 ## What it adds
 
-`pi-workbench` currently registers two native workspaces:
+`pi-workbench` currently registers three native workspaces:
 
 - `/diff-review` opens a native review window for the current git repository.
   From there you can review a working tree diff, the last commit, or the full
   repository snapshot without loading every file up front.
 - `/response-review` opens a native response review workspace for the current Pi
   session.
+- `/btw` opens a native side-conversation workspace backed by a real Pi
+  sub-session.
 
 Latest diff-review features include:
 
@@ -90,6 +92,13 @@ old/new side context so pi can apply the feedback with useful location metadata.
 5. Add optional overall feedback and a draft/next prompt.
 6. Finish the review to insert a structured follow-up prompt into pi.
 
+### BTW side conversation
+
+1. Run `/btw <question>` to open the native BTW workspace and ask a side question.
+2. Continue the side thread from the workspace composer.
+3. Use `New`, `Tangent`, model/thinking overrides, or `/btw:*` commands for lifecycle control.
+4. Use `Inject` or `Summarize` to hand the thread back to the main Pi session.
+
 ## Requirements
 
 - macOS, Linux, or Windows.
@@ -132,6 +141,9 @@ rebuilds the web bundle, and stages the generated `dist/web` assets.
   - `host/` - session extraction, command registration, prompt composition.
   - `web/` - response picker, rendered response view, annotations, review queue.
   - `shared/` - response-review contracts.
+- `src/features/btw/` - native BTW side-conversation feature slice.
+  - `host/` - Pi sub-session runtime, persistence, handoff commands, workspace lifecycle.
+  - `web/` - transcript, composer, model/thinking controls, handoff actions.
 - `src/shared/host/` - host-only helpers shared across features.
 - `src/shared/web/` - browser-only helpers shared across features.
 - `src/shared/contracts/` - runtime-neutral contracts shared across features.
