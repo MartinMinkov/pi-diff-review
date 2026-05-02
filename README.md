@@ -6,8 +6,12 @@ Native review workspaces for [pi](https://pi.dev/), powered by
 This repository started as a fork of
 [badlogic/pi-diff-review](https://github.com/badlogic/pi-diff-review). The fork
 has since grown into `pi-workbench`, a home for native Pi workspaces that help
-review structured context, add feedback, navigate relevant code, and send final
-instructions back into pi.
+review structured context, add feedback, navigate relevant code, run side
+conversations, and send final instructions back into pi.
+
+`pi-workbench` owns these workflows directly. For example, `/btw` is now a
+feature in this repository rather than a wrapper around the standalone
+`pi-btw` package.
 
 ```bash
 pi install git:https://github.com/MartinMinkov/pi-workbench
@@ -94,10 +98,31 @@ old/new side context so pi can apply the feedback with useful location metadata.
 
 ### BTW side conversation
 
+BTW is a native workspace for side conversations that should not derail the main
+Pi thread. It opens a real Pi sub-session with coding-tool access, keeps the
+side-thread transcript in the workspace, and can hand the result back to the main
+session when you are ready.
+
+Common commands:
+
+```text
+/btw <question>
+/btw --save <question>
+/btw:new [question]
+/btw:tangent [question]
+/btw:inject [instructions]
+/btw:summarize [instructions]
+/btw:model [<provider> <model> <api> | clear]
+/btw:thinking [<level> | clear]
+/btw:clear
+```
+
+Typical flow:
+
 1. Run `/btw <question>` to open the native BTW workspace and ask a side question.
-2. Continue the side thread from the workspace composer.
+2. Continue the side thread from the workspace composer while the main session stays focused.
 3. Use `New`, `Tangent`, model/thinking overrides, or `/btw:*` commands for lifecycle control.
-4. Use `Inject` or `Summarize` to hand the thread back to the main Pi session.
+4. Use `Inject` for the full thread or `Summarize` for a condensed handoff back to the main Pi session.
 
 ## Requirements
 
