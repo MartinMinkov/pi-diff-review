@@ -5,32 +5,45 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const rootDir = join(__dirname, "..");
-const sourceDir = join(rootDir, "src", "web");
-const distDir = join(rootDir, "dist", "web");
 
-mkdirSync(distDir, { recursive: true });
-copyFileSync(join(sourceDir, "index.html"), join(distDir, "index.html"));
-
-const result = spawnSync(
-  "bun",
-  [
-    "build",
-    join(sourceDir, "main.ts"),
-    "--bundle",
-    "--target=browser",
-    "--format=iife",
-    `--outfile=${join(distDir, "app.js")}`,
-  ],
+const webApps = [
   {
-    cwd: rootDir,
-    stdio: "inherit",
+    name: "diff-review",
+    sourceDir: join(rootDir, "src", "features", "diff-review", "web"),
+    distDir: join(rootDir, "dist", "web", "diff-review"),
   },
-);
+  {
+    name: "response-review",
+    sourceDir: join(rootDir, "src", "features", "response-review", "web"),
+    distDir: join(rootDir, "dist", "web", "response-review"),
+  },
+];
 
-if (result.error) {
-  throw result.error;
-}
+for (const app of webApps) {
+  mkdirSync(app.distDir, { recursive: true });
+  copyFileSync(join(app.sourceDir, "index.html"), join(app.distDir, "index.html"));
 
-if (result.status !== 0) {
-  process.exit(result.status ?? 1);
+  const result = spawnSync(
+    "bun",
+    [
+      "build",
+      join(app.sourceDir, "main.ts"),
+      "--bundle",
+      "--target=browser",
+      "--format=iife",
+      `--outfile=${join(app.distDir, "app.js")}`,
+    ],
+    {
+      cwd: rootDir,
+      stdio: "inherit",
+    },
+  );
+
+  if (result.error) {
+    throw result.error;
+  }
+
+  if (result.status !== 0) {
+    process.exit(result.status ?? 1);
+  }
 }

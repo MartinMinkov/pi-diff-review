@@ -20,7 +20,7 @@
   },
   "pi": {
     "extensions": [
-      "./src/host/command/register-diff-review.ts"
+      "./src/extension.ts"
     ]
   },
   "dependencies": {

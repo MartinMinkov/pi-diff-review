@@ -6,5 +6,5 @@
     "noEmit": true,
     "types": []
   },
-  "include": ["src/web/**/*.ts", "src/shared/**/*.ts"]
+  "include": ["src/features/*/web/**/*.ts", "src/features/*/shared/**/*.ts", "src/shared/contracts/**/*.ts", "src/shared/web/**/*.ts"]
 }

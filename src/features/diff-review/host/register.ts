@@ -2,14 +2,13 @@ import type {
   ExtensionAPI,
   ExtensionCommandContext,
 } from "@mariozechner/pi-coding-agent";
-import { Key, matchesKey, truncateToWidth } from "@mariozechner/pi-tui";
 import { open, type GlimpseWindow } from "glimpseui";
 import {
   getReviewWindowData,
   loadReviewFileContents,
-} from "../repo/review-window-data.js";
-import { composeReviewPrompt } from "../prompt/compose-review-prompt.js";
-import { ReviewNavigationService } from "../navigation/service.js";
+} from "./repo/review-window-data.js";
+import { composeReviewPrompt } from "./prompt/compose-review-prompt.js";
+import { ReviewNavigationService } from "./navigation/service.js";
 import type {
   ReviewCancelPayload,
   ReviewFile,
@@ -20,8 +19,9 @@ import type {
   ReviewRequestReferencesPayload,
   ReviewSubmitPayload,
   ReviewWindowMessage,
-} from "../../shared/contracts/review.js";
-import { buildReviewHtml } from "../ui/build-review-html.js";
+} from "../shared/contracts/review.js";
+import { showNativeWindowWaitingUI } from "../../../shared/host/waiting-ui.js";
+import { buildReviewHtml } from "./ui/build-review-html.js";
 
 function isSubmitPayload(
   value: ReviewWindowMessage,
@@ -53,8 +53,6 @@ function isRequestReferencesPayload(
   return value.type === "request-references";
 }
 
-type WaitingEditorResult = "escape" | "window-settled";
-
 function escapeForInlineScript(value: string): string {
   return value
     .replace(/</g, "\\u003c")
@@ -75,80 +73,6 @@ export default function (pi: ExtensionAPI) {
     } catch {
       // Ignore close errors while tearing down the review window.
     }
-  }
-
-  function showWaitingUI(ctx: ExtensionCommandContext): {
-    promise: Promise<WaitingEditorResult>;
-    dismiss: () => void;
-  } {
-    let settled = false;
-    let doneFn: ((result: WaitingEditorResult) => void) | null = null;
-    let pendingResult: WaitingEditorResult | null = null;
-
-    const finish = (result: WaitingEditorResult): void => {
-      if (settled) return;
-      settled = true;
-      if (activeWaitingUIDismiss === dismiss) {
-        activeWaitingUIDismiss = null;
-      }
-      if (doneFn != null) {
-        doneFn(result);
-      } else {
-        pendingResult = result;
-      }
-    };
-
-    const promise = ctx.ui.custom<WaitingEditorResult>(
-      (_tui, theme, _kb, done) => {
-        doneFn = done;
-        if (pendingResult != null) {
-          const result = pendingResult;
-          pendingResult = null;
-          queueMicrotask(() => done(result));
-        }
-
-        return {
-          render(width: number): string[] {
-            const innerWidth = Math.max(24, width - 2);
-            const borderTop = theme.fg("border", `╭${"─".repeat(innerWidth)}╮`);
-            const borderBottom = theme.fg(
-              "border",
-              `╰${"─".repeat(innerWidth)}╯`,
-            );
-            const lines = [
-              theme.fg("accent", theme.bold("Waiting for review")),
-              "The native review window is open.",
-              "Press Escape to cancel and close the review window.",
-            ];
-            return [
-              borderTop,
-              ...lines.map(
-                (line) =>
-                  `${theme.fg("border", "│")}${truncateToWidth(line, innerWidth, "...", true).padEnd(innerWidth, " ")}${theme.fg("border", "│")}`,
-              ),
-              borderBottom,
-            ];
-          },
-          handleInput(data: string): void {
-            if (matchesKey(data, Key.escape)) {
-              finish("escape");
-            }
-          },
-          invalidate(): void {},
-        };
-      },
-    );
-
-    const dismiss = (): void => {
-      finish("window-settled");
-    };
-
-    activeWaitingUIDismiss = dismiss;
-
-    return {
-      promise,
-      dismiss,
-    };
   }
 
   async function reviewRepository(ctx: ExtensionCommandContext): Promise<void> {
@@ -203,7 +127,13 @@ export default function (pi: ExtensionAPI) {
       }
     };
 
-    const waitingUI = showWaitingUI(ctx);
+    const waitingUI = showNativeWindowWaitingUI(ctx, {
+      title: "Waiting for review",
+      message: "The native review window is open.",
+      onDismiss: (dismiss) => {
+        activeWaitingUIDismiss = dismiss;
+      },
+    });
     const fileMap = new Map(files.map((file) => [file.id, file]));
     const contentCache = new Map<string, Promise<ReviewFileContents>>();
     const navigationService = new ReviewNavigationService(repoRoot, files);

@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>pi response review</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0d1117;
+        --panel: #161b22;
+        --panel-2: #11161d;
+        --border: #30363d;
+        --text: #c9d1d9;
+        --muted: #8b949e;
+        --accent: #58a6ff;
+        --success: #238636;
+        --danger: #f85149;
+        --warning: #d29922;
+      }
+
+      * { box-sizing: border-box; }
+      html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      button, textarea, input, select { font: inherit; }
+      button {
+        cursor: pointer;
+        border: 1px solid var(--border);
+        background: var(--panel-2);
+        color: var(--text);
+        border-radius: 8px;
+        padding: 7px 10px;
+        font-size: 12px;
+        font-weight: 650;
+      }
+      button:hover { border-color: rgba(88, 166, 255, 0.55); background: #18212c; }
+      button.primary { background: var(--success); border-color: rgba(240, 246, 252, 0.1); color: white; }
+      button.primary:hover { background: #2ea043; }
+      button.danger:hover { border-color: rgba(248, 81, 73, 0.5); color: #ff7b72; background: rgba(248, 81, 73, 0.1); }
+      button:disabled { cursor: default; opacity: 0.55; }
+      input, textarea, select {
+        width: 100%;
+        border: 1px solid var(--border);
+        background: #0b1016;
+        color: var(--text);
+        border-radius: 8px;
+        padding: 8px 10px;
+        outline: none;
+      }
+      input:focus, textarea:focus, select:focus { border-color: var(--accent); }
+      textarea { resize: vertical; min-height: 88px; line-height: 1.45; }
+      .layout { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+      .topbar {
+        display: flex; align-items: center; justify-content: space-between; gap: 16px;
+        padding: 12px 16px; border-bottom: 1px solid var(--border);
+        background: rgba(11, 16, 22, 0.96);
+      }
+      .title { font-size: 15px; font-weight: 750; color: white; }
+      .subtitle { margin-top: 2px; font-size: 11px; color: var(--muted); }
+      .top-actions { display: flex; align-items: center; gap: 8px; }
+      .content { flex: 1; min-height: 0; display: grid; grid-template-columns: 300px minmax(420px, 1fr) 360px; }
+      .sidebar, .inspector { min-height: 0; overflow: auto; background: rgba(13, 17, 23, 0.92); }
+      .sidebar { border-right: 1px solid var(--border); }
+      .inspector { border-left: 1px solid var(--border); }
+      .section { padding: 14px; border-bottom: 1px solid var(--border); }
+      .section-title { text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-size: 11px; font-weight: 800; margin-bottom: 10px; }
+      .response-list { display: flex; flex-direction: column; gap: 8px; }
+      .response-item { text-align: left; padding: 10px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--border); }
+      .response-item.active { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+      .response-item-title { font-size: 12px; font-weight: 750; margin-bottom: 4px; }
+      .response-item-preview { font-size: 11px; line-height: 1.35; color: var(--muted); font-weight: 450; }
+      .outline-list { display: flex; flex-direction: column; gap: 4px; }
+      .outline-item { text-align: left; border: 0; background: transparent; padding: 5px 4px; color: var(--muted); font-weight: 500; }
+      .outline-item:hover { color: var(--accent); background: rgba(88, 166, 255, 0.08); }
+      .viewer { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: linear-gradient(180deg, rgba(88,166,255,0.05), transparent 220px), var(--bg); }
+      .viewer-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+      .viewer-toolbar-left { min-width: 0; }
+      .active-title { font-size: 13px; font-weight: 750; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .active-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+      .viewer-actions { display: flex; align-items: center; gap: 8px; }
+      .response-scroll { flex: 1; min-height: 0; overflow: auto; padding: 28px min(6vw, 64px); }
+      .response-content { max-width: 920px; margin: 0 auto; line-height: 1.65; font-size: 15px; }
+      .response-content h1, .response-content h2, .response-content h3 { color: white; line-height: 1.25; margin: 28px 0 12px; }
+      .response-content h1 { font-size: 28px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+      .response-content h2 { font-size: 22px; }
+      .response-content h3 { font-size: 18px; }
+      .response-content p { margin: 12px 0; white-space: pre-wrap; }
+      .response-content pre { position: relative; overflow: auto; padding: 14px; background: #0b1016; border: 1px solid var(--border); border-radius: 10px; line-height: 1.45; }
+      .response-content code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+      .code-comment-button { position: absolute; top: 8px; right: 8px; opacity: 0; }
+      pre:hover .code-comment-button { opacity: 1; }
+      .comment-card { border: 1px solid var(--border); background: var(--panel-2); border-radius: 10px; padding: 10px; margin-bottom: 10px; }
+      .comment-card-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+      .kind { color: var(--accent); font-size: 11px; font-weight: 800; text-transform: uppercase; }
+      .excerpt { color: var(--muted); font-size: 11px; border-left: 2px solid var(--border); padding-left: 8px; margin: 8px 0; max-height: 82px; overflow: hidden; white-space: pre-wrap; }
+      .comment-text { font-size: 13px; white-space: pre-wrap; line-height: 1.45; }
+      .small-actions { display: flex; gap: 6px; }
+      .small-actions button { padding: 4px 7px; font-size: 11px; }
+      .empty { color: var(--muted); font-size: 12px; line-height: 1.45; }
+      .flash { color: var(--accent); font-size: 12px; max-width: 32rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .modal-backdrop { position: fixed; inset: 0; background: rgba(1, 4, 9, 0.8); display: none; align-items: center; justify-content: center; z-index: 20; }
+      .modal-backdrop.open { display: flex; }
+      .modal-card { width: min(720px, 92vw); background: var(--panel); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 24px 72px rgba(0,0,0,0.45); padding: 20px; }
+      .modal-title { color: white; font-weight: 800; margin-bottom: 12px; }
+      .modal-grid { display: grid; gap: 12px; }
+      .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+      .selected-preview { color: var(--muted); background: #0b1016; border: 1px solid var(--border); border-radius: 8px; padding: 10px; max-height: 140px; overflow: auto; white-space: pre-wrap; font-size: 12px; }
+      .search-match { background: rgba(210, 153, 34, 0.22); outline: 1px solid rgba(210, 153, 34, 0.36); border-radius: 3px; }
+      ::selection { background: rgba(88, 166, 255, 0.35); }
+    </style>
+  </head>
+  <body>
+    <div class="layout">
+      <header class="topbar">
+        <div>
+          <div class="title">Response review</div>
+          <div class="subtitle">Select response text, add anchored feedback, then finish to insert a structured prompt into Pi.</div>
+        </div>
+        <div class="top-actions">
+          <div id="status" class="flash"></div>
+          <button id="cancel-button" class="danger">Cancel</button>
+          <button id="submit-button" class="primary">Finish review</button>
+        </div>
+      </header>
+
+      <main class="content">
+        <aside class="sidebar">
+          <div class="section">
+            <div class="section-title">Assistant responses</div>
+            <input id="response-search" placeholder="Filter responses…" />
+          </div>
+          <div class="section">
+            <div id="response-list" class="response-list"></div>
+          </div>
+          <div class="section">
+            <div class="section-title">Outline</div>
+            <div id="outline-list" class="outline-list"></div>
+          </div>
+        </aside>
+
+        <section class="viewer">
+          <div class="viewer-toolbar">
+            <div class="viewer-toolbar-left">
+              <div id="active-title" class="active-title"></div>
+              <div id="active-meta" class="active-meta"></div>
+            </div>
+            <div class="viewer-actions">
+              <button id="comment-selection-button">Comment selection</button>
+              <button id="copy-selection-button">Copy selection</button>
+            </div>
+          </div>
+          <div id="response-scroll" class="response-scroll">
+            <article id="response-content" class="response-content"></article>
+          </div>
+        </section>
+
+        <aside class="inspector">
+          <div class="section">
+            <div class="section-title">Overall feedback</div>
+            <textarea id="overall-comment" placeholder="High-level feedback for the assistant…"></textarea>
+          </div>
+          <div class="section">
+            <div class="section-title">Draft / next prompt</div>
+            <textarea id="draft" placeholder="Optional extra instructions to include after the anchored comments…"></textarea>
+          </div>
+          <div class="section">
+            <div class="section-title">Review queue</div>
+            <div id="comment-list"></div>
+          </div>
+        </aside>
+      </main>
+    </div>
+
+    <div id="comment-modal" class="modal-backdrop">
+      <div class="modal-card">
+        <div class="modal-title">Add response comment</div>
+        <div class="modal-grid">
+          <div>
+            <div class="section-title">Selected text</div>
+            <div id="modal-selection" class="selected-preview"></div>
+          </div>
+          <div>
+            <div class="section-title">Kind</div>
+            <select id="modal-kind">
+              <option value="feedback">Feedback</option>
+              <option value="question">Question</option>
+              <option value="correction">Correction</option>
+              <option value="preference">Preference</option>
+              <option value="follow-up">Follow-up</option>
+            </select>
+          </div>
+          <div>
+            <div class="section-title">Comment</div>
+            <textarea id="modal-comment" placeholder="What should the assistant change, clarify, or preserve?"></textarea>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button id="modal-cancel">Cancel</button>
+          <button id="modal-save" class="primary">Add comment</button>
+        </div>
+      </div>
+    </div>
+
+    <script id="response-review-data" type="application/json">__INLINE_DATA__</script>
+    <script>__INLINE_JS__;</script>
+  </body>
+</html>

@@ -15,11 +15,15 @@ pi install git:https://github.com/MartinMinkov/pi-workbench
 
 ## What it adds
 
-The `/diff-review` command opens a native review window for the current git
-repository. From there you can review a working tree diff, the last commit, or
-the full repository snapshot without loading every file up front.
+`pi-workbench` currently registers two native workspaces:
 
-Latest features in this fork include:
+- `/diff-review` opens a native review window for the current git repository.
+  From there you can review a working tree diff, the last commit, or the full
+  repository snapshot without loading every file up front.
+- `/response-review` opens a native response review workspace for the current Pi
+  session. `/head` is an alias for this workflow.
+
+Latest diff-review features include:
 
 - Native Glimpse review window with a Monaco diff editor.
 - Review scopes for `git diff`, `last commit`, and `all files`.
@@ -63,7 +67,9 @@ Semantic definition lookup is available for:
 For other languages, the UI falls back to repository-local import and module path
 navigation where possible.
 
-## Review workflow
+## Review workflows
+
+### Diff review
 
 1. Run `/diff-review` in pi while inside a git repository.
 2. Pick a scope: `git diff`, `last commit`, or `all files`.
@@ -74,6 +80,15 @@ navigation where possible.
 
 The generated prompt preserves comment kind, scope, file path, line range, and
 old/new side context so pi can apply the feedback with useful location metadata.
+
+### Response review
+
+1. Run `/response-review` or `/head` in pi after one or more assistant responses.
+2. Pick an assistant response from the sidebar.
+3. Navigate headings/code blocks from the outline.
+4. Select text or use a code-block comment button to add anchored feedback.
+5. Add optional overall feedback and a draft/next prompt.
+6. Finish the review to insert a structured follow-up prompt into pi.
 
 ## Requirements
 
@@ -102,21 +117,25 @@ pnpm run lint
 pnpm run build:web
 ```
 
-The web UI source lives under `src/web/` and is bundled into `dist/web/`. The
-pre-commit hook runs both TypeScript checks, rebuilds the web bundle, and stages
-the generated `dist/web` assets.
+The web UI source lives under each feature's `web/` directory and is bundled
+into `dist/web/<feature>/`. The pre-commit hook runs both TypeScript checks,
+rebuilds the web bundle, and stages the generated `dist/web` assets.
 
 ## Project layout
 
-- `src/host/command/` - pi command registration and native window lifecycle.
-- `src/host/repo/` - git scope discovery and lazy file-content loading.
-- `src/host/navigation/` - Rust, Go, TypeScript, and fallback navigation
-  backends.
-- `src/host/prompt/` - final feedback prompt composition.
-- `src/shared/` - contracts shared by the host and web UI.
-- `src/web/` - Monaco review workspace, sidebar, comments, inspector, command
-  palette, and search UI.
-- `dist/web/` - built review-window assets consumed by the host.
+- `src/extension.ts` - package entry point that registers all workbench features.
+- `src/features/diff-review/` - diff review feature slice.
+  - `host/` - pi command registration, repository loading, navigation, prompt composition.
+  - `web/` - Monaco diff review workspace.
+  - `shared/` - diff-review contracts and pure shared helpers.
+- `src/features/response-review/` - assistant response review feature slice.
+  - `host/` - session extraction, command registration, prompt composition.
+  - `web/` - response picker, rendered response view, annotations, review queue.
+  - `shared/` - response-review contracts.
+- `src/shared/host/` - host-only helpers shared across features.
+- `src/shared/web/` - browser-only helpers shared across features.
+- `src/shared/contracts/` - runtime-neutral contracts shared across features.
+- `dist/web/` - built web assets consumed by native Glimpse windows.
 
 ## Git history highlights
 

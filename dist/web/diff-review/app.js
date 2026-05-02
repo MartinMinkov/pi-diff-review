@@ -1,5 +1,5 @@
 (() => {
-  // src/web/shared/lib/utils.ts
+  // src/features/diff-review/web/shared/lib/utils.ts
   function escapeHtml(value) {
     return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
@@ -110,7 +110,7 @@
     return root;
   }
 
-  // src/shared/lib/navigation.ts
+  // src/features/diff-review/shared/lib/navigation.ts
   var SEMANTIC_DEFINITION_LANGUAGE_SET = new Set([
     "rust",
     "go",
@@ -124,7 +124,7 @@
     return supportsSemanticDefinition(languageId) ? "open definition" : "open module/import target";
   }
 
-  // src/web/app/shared/review-helpers.ts
+  // src/features/diff-review/web/app/shared/review-helpers.ts
   function getCommentKind(comment) {
     return comment.kind ?? "feedback";
   }
@@ -182,7 +182,7 @@
     return left.fileId === right.fileId && left.scope === right.scope && left.side === right.side && left.line === right.line && left.column === right.column;
   }
 
-  // src/web/app/models/review-file-model.ts
+  // src/features/diff-review/web/app/models/review-file-model.ts
   function createReviewFileModel(options) {
     const { reviewDataFiles, state, isFileReviewed } = options;
     function getScopedFiles() {
@@ -283,7 +283,7 @@
     };
   }
 
-  // src/web/app/search/review-code-search.ts
+  // src/features/diff-review/web/app/search/review-code-search.ts
   function createReviewCodeSearchController(options) {
     const {
       scope,
@@ -444,7 +444,7 @@
     };
   }
 
-  // src/web/features/comments/modals.ts
+  // src/features/diff-review/web/features/comments/modals.ts
   function getCommentKindLabel2(kind) {
     switch (kind) {
       case "question":
@@ -810,7 +810,7 @@
     return container;
   }
 
-  // src/web/app/commands/review-command-palette.ts
+  // src/features/diff-review/web/app/commands/review-command-palette.ts
   function createReviewCommandPaletteController(options) {
     const {
       state,
@@ -1002,7 +1002,7 @@ ${snippet}`;
     };
   }
 
-  // src/web/features/symbols/symbol-context.ts
+  // src/features/diff-review/web/features/symbols/symbol-context.ts
   function getReviewSymbolContext(content, lineNumber, languageId) {
     const lines = content.split(/\r?\n/);
     const maxIndex = Math.min(Math.max(lineNumber - 1, 0), lines.length - 1);
@@ -1109,7 +1109,7 @@ ${snippet}`;
 `).trim();
   }
 
-  // src/web/app/inspector/review-inspector.ts
+  // src/features/diff-review/web/app/inspector/review-inspector.ts
   function createReviewInspectorController(options) {
     const {
       reviewDataFiles,
@@ -1343,7 +1343,7 @@ ${snippet}`;
     });
   }
 
-  // src/web/features/file-tree/sidebar.ts
+  // src/features/diff-review/web/features/file-tree/sidebar.ts
   function createSidebarController(options) {
     const {
       reviewDataFiles,
@@ -1575,7 +1575,7 @@ ${snippet}`;
     };
   }
 
-  // src/web/shared/state/review-state.ts
+  // src/features/diff-review/web/shared/state/review-state.ts
   function createInitialReviewState(reviewData) {
     return {
       activeFileId: null,
@@ -1600,7 +1600,7 @@ ${snippet}`;
     };
   }
 
-  // src/web/app/ui/dom.ts
+  // src/features/diff-review/web/app/ui/dom.ts
   function getReviewDomElements() {
     return {
       sidebarEl: document.getElementById("sidebar"),
@@ -1638,7 +1638,7 @@ ${snippet}`;
     };
   }
 
-  // src/web/features/comments/comment-manager.ts
+  // src/features/diff-review/web/features/comments/comment-manager.ts
   function createCommentManager(options) {
     const { state, activeFile, scopeLabel: scopeLabel2, fileCommentsContainer } = options;
     function renderCommentDOM2(comment, options2) {
@@ -1686,7 +1686,7 @@ ${snippet}`;
     };
   }
 
-  // src/web/features/editor/review-editor.ts
+  // src/features/diff-review/web/features/editor/review-editor.ts
   var NAVIGATION_HOVER_DEBOUNCE_MS = 80;
   var MAX_NAVIGATION_HOVER_CACHE_ENTRIES = 300;
   function scrollKey(scope, fileId) {
@@ -2513,7 +2513,7 @@ Target: \`${describeNavigationTarget(target)}\`
     };
   }
 
-  // src/web/features/navigation/resolver.ts
+  // src/features/diff-review/web/features/navigation/resolver.ts
   var REVIEW_MODEL_SCHEME = "review-model";
   var REVIEW_TARGET_SCHEME = "review-target";
   var TS_LIKE_EXTENSIONS = [
@@ -3139,7 +3139,7 @@ Target: \`${describeNavigationTarget(target)}\`
     return value === "original" || value === "modified";
   }
 
-  // src/web/app/runtime/controller.ts
+  // src/features/diff-review/web/app/runtime/controller.ts
   function createReviewRuntimeController(options) {
     const {
       dom: {
@@ -3257,7 +3257,7 @@ Target: \`${describeNavigationTarget(target)}\`
     };
   }
 
-  // src/web/app/main.ts
+  // src/features/diff-review/web/app/main.ts
   var reviewData = JSON.parse(document.getElementById("diff-review-data")?.textContent ?? "{}");
   var state = createInitialReviewState(reviewData);
   var navigationResolver = createReviewNavigationResolver(reviewData);

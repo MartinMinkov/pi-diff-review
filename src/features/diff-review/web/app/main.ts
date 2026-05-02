@@ -32,7 +32,6 @@ import {
   type DiffReviewComment,
   type ReviewDefinitionDataMessage,
   type ReviewDefinitionErrorMessage,
-  type ReviewHostMessage,
   type ReviewFileContents,
   type ReviewFileDataMessage,
   type ReviewFileErrorMessage,
@@ -67,7 +66,7 @@ import { createReviewRuntimeController } from "./runtime/controller.js";
 declare global {
   interface Window {
     glimpse?: {
-      send(payload: ReviewWindowMessage | ReviewHostMessage): void;
+      send(payload: unknown): void;
       close(): void;
     };
   }
