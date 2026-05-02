@@ -2,13 +2,17 @@ import type {
   ExtensionAPI,
   ExtensionCommandContext,
 } from "@mariozechner/pi-coding-agent";
-import { open, type GlimpseWindow } from "glimpseui";
+import {
+  createNativeWindowState,
+  runNativeWindowSession,
+  type NativeWindowSessionApi,
+} from "../../../shared/host/native-window-session.js";
+import { ReviewNavigationService } from "./navigation/service.js";
+import { composeReviewPrompt } from "./prompt/compose-review-prompt.js";
 import {
   getReviewWindowData,
   loadReviewFileContents,
 } from "./repo/review-window-data.js";
-import { composeReviewPrompt } from "./prompt/compose-review-prompt.js";
-import { ReviewNavigationService } from "./navigation/service.js";
 import type {
   ReviewCancelPayload,
   ReviewFile,
@@ -20,8 +24,9 @@ import type {
   ReviewSubmitPayload,
   ReviewWindowMessage,
 } from "../shared/contracts/review.js";
-import { showNativeWindowWaitingUI } from "../../../shared/host/waiting-ui.js";
 import { buildReviewHtml } from "./ui/build-review-html.js";
+
+type DiffReviewResult = ReviewSubmitPayload | ReviewCancelPayload;
 
 function isSubmitPayload(
   value: ReviewWindowMessage,
@@ -53,96 +58,31 @@ function isRequestReferencesPayload(
   return value.type === "request-references";
 }
 
-function escapeForInlineScript(value: string): string {
-  return value
-    .replace(/</g, "\\u003c")
-    .replace(/>/g, "\\u003e")
-    .replace(/&/g, "\\u0026");
+function sendReviewMessage(
+  api: NativeWindowSessionApi<DiffReviewResult>,
+  message: ReviewHostMessage,
+): void {
+  api.send("__reviewReceive", message);
 }
 
-export default function (pi: ExtensionAPI) {
-  let activeWindow: GlimpseWindow | null = null;
-  let activeWaitingUIDismiss: (() => void) | null = null;
-
-  function closeActiveWindow(): void {
-    if (activeWindow == null) return;
-    const windowToClose = activeWindow;
-    activeWindow = null;
-    try {
-      windowToClose.close();
-    } catch {
-      // Ignore close errors while tearing down the review window.
-    }
-  }
+export default function registerDiffReview(pi: ExtensionAPI): void {
+  const windowState = createNativeWindowState();
 
   async function reviewRepository(ctx: ExtensionCommandContext): Promise<void> {
-    if (activeWindow != null) {
+    if (windowState.hasActiveWindow()) {
       ctx.ui.notify("A review window is already open.", "warning");
       return;
     }
 
-    const { repoRoot, files, goModules } = await getReviewWindowData(
-      pi,
-      ctx.cwd,
-    );
+    const { repoRoot, files, goModules } = await getReviewWindowData(pi, ctx.cwd);
     if (files.length === 0) {
       ctx.ui.notify("No reviewable files found.", "info");
       return;
     }
 
-    const html = buildReviewHtml({ repoRoot, files, goModules });
-    const previousGlimpseBackend = process.env.GLIMPSE_BACKEND;
-    const shouldUseChromiumBackend =
-      process.platform === "linux" &&
-      !process.env.WAYLAND_DISPLAY &&
-      process.env.XDG_SESSION_TYPE !== "wayland" &&
-      previousGlimpseBackend == null;
-
-    let window: GlimpseWindow;
-    try {
-      if (shouldUseChromiumBackend) {
-        process.env.GLIMPSE_BACKEND = "chromium";
-      }
-
-      window = open(html, {
-        width: 1680,
-        height: 1020,
-        title: "pi review",
-      });
-    } finally {
-      if (shouldUseChromiumBackend) {
-        delete process.env.GLIMPSE_BACKEND;
-      }
-    }
-    activeWindow = window;
-
-    const closeReviewWindow = (): void => {
-      if (activeWindow === window) {
-        activeWindow = null;
-      }
-      try {
-        window.close();
-      } catch {
-        // Ignore close errors while tearing down the review window.
-      }
-    };
-
-    const waitingUI = showNativeWindowWaitingUI(ctx, {
-      title: "Waiting for review",
-      message: "The native review window is open.",
-      onDismiss: (dismiss) => {
-        activeWaitingUIDismiss = dismiss;
-      },
-    });
     const fileMap = new Map(files.map((file) => [file.id, file]));
     const contentCache = new Map<string, Promise<ReviewFileContents>>();
     const navigationService = new ReviewNavigationService(repoRoot, files);
-
-    const sendWindowMessage = (message: ReviewHostMessage): void => {
-      if (activeWindow !== window) return;
-      const payload = escapeForInlineScript(JSON.stringify(message));
-      window.send(`window.__reviewReceive(${payload});`);
-    };
 
     const loadContents = (
       file: ReviewFile,
@@ -157,196 +97,156 @@ export default function (pi: ExtensionAPI) {
       return pending;
     };
 
-    ctx.ui.notify("Opened native review window.", "info");
-
-    try {
-      const terminalMessagePromise = new Promise<
-        ReviewSubmitPayload | ReviewCancelPayload | null
-      >((resolve, reject) => {
-        let settled = false;
-
-        const cleanup = (): void => {
-          window.removeListener("message", onMessage);
-          window.removeListener("closed", onClosed);
-          window.removeListener("error", onError);
-          void navigationService.dispose();
-          if (activeWindow === window) {
-            activeWindow = null;
-          }
-        };
-
-        const settle = (
-          value: ReviewSubmitPayload | ReviewCancelPayload | null,
-        ): void => {
-          if (settled) return;
-          settled = true;
-          cleanup();
-          resolve(value);
-        };
-
-        const handleRequestFile = async (
-          message: ReviewRequestFilePayload,
-        ): Promise<void> => {
-          const file = fileMap.get(message.fileId);
-          if (file == null) {
-            sendWindowMessage({
-              type: "file-error",
-              requestId: message.requestId,
-              fileId: message.fileId,
-              scope: message.scope,
-              message: "Unknown file requested.",
-            });
-            return;
-          }
-
-          try {
-            const contents = await loadContents(file, message.scope);
-            sendWindowMessage({
-              type: "file-data",
-              requestId: message.requestId,
-              fileId: message.fileId,
-              scope: message.scope,
-              originalContent: contents.originalContent,
-              modifiedContent: contents.modifiedContent,
-            });
-          } catch (error) {
-            const messageText =
-              error instanceof Error ? error.message : String(error);
-            sendWindowMessage({
-              type: "file-error",
-              requestId: message.requestId,
-              fileId: message.fileId,
-              scope: message.scope,
-              message: messageText,
-            });
-          }
-        };
-
-        const onMessage = (data: unknown): void => {
-          const message = data as ReviewWindowMessage;
-          if (isRequestFilePayload(message)) {
-            void handleRequestFile(message);
-            return;
-          }
-          if (isRequestDefinitionPayload(message)) {
-            void (async () => {
-              try {
-                const target = await navigationService.resolveDefinition(
-                  message.request,
-                );
-                sendWindowMessage({
-                  type: "definition-data",
-                  requestId: message.requestId,
-                  target,
-                });
-              } catch (error) {
-                const messageText =
-                  error instanceof Error ? error.message : String(error);
-                sendWindowMessage({
-                  type: "definition-error",
-                  requestId: message.requestId,
-                  message: messageText,
-                });
-              }
-            })();
-            return;
-          }
-          if (isRequestReferencesPayload(message)) {
-            void (async () => {
-              try {
-                const targets = await navigationService.resolveReferences(
-                  message.request,
-                );
-                sendWindowMessage({
-                  type: "references-data",
-                  requestId: message.requestId,
-                  targets,
-                });
-              } catch (error) {
-                const messageText =
-                  error instanceof Error ? error.message : String(error);
-                sendWindowMessage({
-                  type: "references-error",
-                  requestId: message.requestId,
-                  message: messageText,
-                });
-              }
-            })();
-            return;
-          }
-          if (isSubmitPayload(message) || isCancelPayload(message)) {
-            if (isSubmitPayload(message)) {
-              sendWindowMessage({
-                type: "submit-ack",
-                requestId: message.requestId,
-                commentCount: message.comments.length,
-                hasOverallComment: message.overallComment.trim().length > 0,
-              });
-              setTimeout(() => {
-                settle(message);
-                closeReviewWindow();
-              }, 40);
-              return;
-            }
-            settle(message);
-            closeReviewWindow();
-          }
-        };
-
-        const onClosed = (): void => {
-          settle(null);
-        };
-
-        const onError = (error: Error): void => {
-          if (settled) return;
-          settled = true;
-          cleanup();
-          reject(error);
-        };
-
-        window.on("message", onMessage);
-        window.on("closed", onClosed);
-        window.on("error", onError);
-      });
-
-      const result = await Promise.race([
-        terminalMessagePromise.then((message) => ({
-          type: "window" as const,
-          message,
-        })),
-        waitingUI.promise.then((reason) => ({ type: "ui" as const, reason })),
-      ]);
-
-      if (result.type === "ui" && result.reason === "escape") {
-        closeReviewWindow();
-        await terminalMessagePromise.catch(() => null);
-        ctx.ui.notify("Review cancelled.", "info");
+    const handleRequestFile = async (
+      message: ReviewRequestFilePayload,
+      api: NativeWindowSessionApi<DiffReviewResult>,
+    ): Promise<void> => {
+      const file = fileMap.get(message.fileId);
+      if (file == null) {
+        sendReviewMessage(api, {
+          type: "file-error",
+          requestId: message.requestId,
+          fileId: message.fileId,
+          scope: message.scope,
+          message: "Unknown file requested.",
+        });
         return;
       }
 
-      const message =
-        result.type === "window"
-          ? result.message
-          : await terminalMessagePromise;
-
-      waitingUI.dismiss();
-      closeReviewWindow();
-      await waitingUI.promise;
-
-      if (message == null || message.type === "cancel") {
-        ctx.ui.notify("Review cancelled.", "info");
-        return;
+      try {
+        const contents = await loadContents(file, message.scope);
+        sendReviewMessage(api, {
+          type: "file-data",
+          requestId: message.requestId,
+          fileId: message.fileId,
+          scope: message.scope,
+          originalContent: contents.originalContent,
+          modifiedContent: contents.modifiedContent,
+        });
+      } catch (error) {
+        const messageText = error instanceof Error ? error.message : String(error);
+        sendReviewMessage(api, {
+          type: "file-error",
+          requestId: message.requestId,
+          fileId: message.fileId,
+          scope: message.scope,
+          message: messageText,
+        });
       }
+    };
 
-      const prompt = composeReviewPrompt(files, message);
-      ctx.ui.setEditorText(prompt);
-      ctx.ui.notify("Inserted review feedback into the editor.", "info");
-    } catch (error) {
-      activeWaitingUIDismiss?.();
-      closeActiveWindow();
-      const message = error instanceof Error ? error.message : String(error);
-      ctx.ui.notify(`Review failed: ${message}`, "error");
+    const handleRequestDefinition = (
+      message: ReviewRequestDefinitionPayload,
+      api: NativeWindowSessionApi<DiffReviewResult>,
+    ): void => {
+      void (async () => {
+        try {
+          const target = await navigationService.resolveDefinition(message.request);
+          sendReviewMessage(api, {
+            type: "definition-data",
+            requestId: message.requestId,
+            target,
+          });
+        } catch (error) {
+          const messageText = error instanceof Error ? error.message : String(error);
+          sendReviewMessage(api, {
+            type: "definition-error",
+            requestId: message.requestId,
+            message: messageText,
+          });
+        }
+      })();
+    };
+
+    const handleRequestReferences = (
+      message: ReviewRequestReferencesPayload,
+      api: NativeWindowSessionApi<DiffReviewResult>,
+    ): void => {
+      void (async () => {
+        try {
+          const targets = await navigationService.resolveReferences(message.request);
+          sendReviewMessage(api, {
+            type: "references-data",
+            requestId: message.requestId,
+            targets,
+          });
+        } catch (error) {
+          const messageText = error instanceof Error ? error.message : String(error);
+          sendReviewMessage(api, {
+            type: "references-error",
+            requestId: message.requestId,
+            message: messageText,
+          });
+        }
+      })();
+    };
+
+    const result = await runNativeWindowSession<DiffReviewResult>({
+      ctx,
+      state: windowState,
+      html: buildReviewHtml({ repoRoot, files, goModules }),
+      window: {
+        width: 1680,
+        height: 1020,
+        title: "pi review",
+      },
+      waiting: {
+        title: "Waiting for review",
+        message: "The native review window is open.",
+      },
+      messages: {
+        busy: "A review window is already open.",
+        opened: "Opened native review window.",
+        cancelled: "Review cancelled.",
+        openErrorPrefix: "Could not open review window",
+        failurePrefix: "Review failed",
+      },
+      onCleanup: () => {
+        void navigationService.dispose();
+      },
+      onMessage(data, api) {
+        const message = data as ReviewWindowMessage;
+        if (isRequestFilePayload(message)) {
+          void handleRequestFile(message, api);
+          return;
+        }
+        if (isRequestDefinitionPayload(message)) {
+          handleRequestDefinition(message, api);
+          return;
+        }
+        if (isRequestReferencesPayload(message)) {
+          handleRequestReferences(message, api);
+          return;
+        }
+        if (isSubmitPayload(message)) {
+          sendReviewMessage(api, {
+            type: "submit-ack",
+            requestId: message.requestId,
+            commentCount: message.comments.length,
+            hasOverallComment: message.overallComment.trim().length > 0,
+          });
+          setTimeout(() => {
+            api.settle(message);
+            api.closeWindow();
+          }, 40);
+          return;
+        }
+        if (isCancelPayload(message)) {
+          api.settle(message);
+          api.closeWindow();
+        }
+      },
+    });
+
+    if (result.type !== "message") return;
+    if (result.message.type === "cancel") {
+      ctx.ui.notify("Review cancelled.", "info");
+      return;
     }
+
+    const prompt = composeReviewPrompt(files, result.message);
+    ctx.ui.setEditorText(prompt);
+    ctx.ui.notify("Inserted review feedback into the editor.", "info");
   }
 
   pi.registerCommand("diff-review", {
@@ -358,7 +258,6 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("session_shutdown", async () => {
-    activeWaitingUIDismiss?.();
-    closeActiveWindow();
+    windowState.shutdown();
   });
 }
