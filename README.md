@@ -1,16 +1,16 @@
-# pi-diff-review
+# pi-workbench
 
-Native diff review workspace for [pi](https://pi.dev/), powered by
+Native review workspaces for [pi](https://pi.dev/), powered by
 [Glimpse](https://github.com/hazat/glimpse), Monaco, and a TypeScript web UI.
 
 This repository started as a fork of
 [badlogic/pi-diff-review](https://github.com/badlogic/pi-diff-review). The fork
-has since grown into a full native review window for browsing repository
-changes, adding structured feedback, jumping around code, and sending the final
-review instructions back into pi.
+has since grown into `pi-workbench`, a home for native Pi workspaces that help
+review structured context, add feedback, navigate relevant code, and send final
+instructions back into pi.
 
 ```bash
-pi install git:https://github.com/MartinMinkov/pi-diff-review
+pi install git:https://github.com/MartinMinkov/pi-workbench
 ```
 
 ## What it adds
