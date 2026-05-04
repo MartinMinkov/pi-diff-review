@@ -318,14 +318,23 @@ function getSelectionInResponse(): PendingSelection | null {
   return { text, startOffset, endOffset };
 }
 
-function isEditableTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
+function isTextEntryElement(element: Element | null): boolean {
+  if (!(element instanceof HTMLElement)) return false;
   return (
-    target instanceof HTMLInputElement ||
-    target instanceof HTMLTextAreaElement ||
-    target instanceof HTMLSelectElement ||
-    target.isContentEditable
+    element instanceof HTMLInputElement ||
+    element instanceof HTMLTextAreaElement ||
+    element instanceof HTMLSelectElement ||
+    element.isContentEditable
   );
+}
+
+function isTextEntryEvent(event: KeyboardEvent): boolean {
+  const pathHasTextEntry = event.composedPath().some((item) => {
+    return item instanceof Element && isTextEntryElement(item);
+  });
+  if (pathHasTextEntry) return true;
+
+  return isTextEntryElement(document.activeElement);
 }
 
 function commentCurrentSelection(): void {
@@ -507,7 +516,7 @@ document.addEventListener("keydown", (event) => {
     !event.ctrlKey &&
     !event.altKey &&
     !event.shiftKey;
-  if (wantsCommentShortcut && !modalEl.classList.contains("open") && !isEditableTarget(event.target)) {
+  if (wantsCommentShortcut && !modalEl.classList.contains("open") && !isTextEntryEvent(event)) {
     const selection = getSelectionInResponse();
     if (!selection) return;
     event.preventDefault();

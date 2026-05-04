@@ -1054,6 +1054,33 @@ const runtimeController = createReviewRuntimeController({
   },
 });
 
+function isTextEntryElement(element: Element | null): boolean {
+  if (!(element instanceof HTMLElement)) return false;
+
+  const isMonacoInputArea =
+    element instanceof HTMLTextAreaElement &&
+    element.classList.contains("inputarea") &&
+    element.closest(".monaco-editor") != null;
+
+  if (isMonacoInputArea) return false;
+
+  return (
+    element instanceof HTMLInputElement ||
+    element instanceof HTMLTextAreaElement ||
+    element instanceof HTMLSelectElement ||
+    element.isContentEditable
+  );
+}
+
+function isTextEntryEvent(event: KeyboardEvent): boolean {
+  const pathHasTextEntry = event.composedPath().some((item) => {
+    return item instanceof Element && isTextEntryElement(item);
+  });
+  if (pathHasTextEntry) return true;
+
+  return isTextEntryElement(document.activeElement);
+}
+
 window.addEventListener("keydown", (event) => {
   if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === "p") {
     event.preventDefault();
@@ -1068,14 +1095,7 @@ window.addEventListener("keydown", (event) => {
   }
 
   if (event.defaultPrevented) return;
-  const target = event.target as HTMLElement | null;
-  const isMonacoTarget = target?.closest(".monaco-editor") != null;
-  const isTypingTarget =
-    !isMonacoTarget &&
-    (target instanceof HTMLInputElement ||
-      target instanceof HTMLTextAreaElement ||
-      target?.isContentEditable === true);
-  if (isTypingTarget) return;
+  if (isTextEntryEvent(event)) return;
 
   if (event.key === "f" && !event.metaKey && !event.ctrlKey && !event.altKey) {
     event.preventDefault();

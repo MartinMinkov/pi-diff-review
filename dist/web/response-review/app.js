@@ -255,10 +255,18 @@
     const endOffset = startOffset + selection.toString().length;
     return { text, startOffset, endOffset };
   }
-  function isEditableTarget(target) {
-    if (!(target instanceof HTMLElement))
+  function isTextEntryElement(element) {
+    if (!(element instanceof HTMLElement))
       return false;
-    return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || target.isContentEditable;
+    return element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement || element.isContentEditable;
+  }
+  function isTextEntryEvent(event) {
+    const pathHasTextEntry = event.composedPath().some((item) => {
+      return item instanceof Element && isTextEntryElement(item);
+    });
+    if (pathHasTextEntry)
+      return true;
+    return isTextEntryElement(document.activeElement);
   }
   function commentCurrentSelection() {
     const selection = getSelectionInResponse();
@@ -420,7 +428,7 @@
       return;
     }
     const wantsCommentShortcut = event.key.toLowerCase() === "c" && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey;
-    if (wantsCommentShortcut && !modalEl.classList.contains("open") && !isEditableTarget(event.target)) {
+    if (wantsCommentShortcut && !modalEl.classList.contains("open") && !isTextEntryEvent(event)) {
       const selection = getSelectionInResponse();
       if (!selection)
         return;
